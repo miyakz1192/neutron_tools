@@ -1,13 +1,33 @@
 #!/usr/bin/env ruby
 
 require 'json'
+require 'rest_client'
+"sudo gem install rest-client"
 
+
+module RestAPIBase
+  def basic_header
+    header = {:content_type => :json, :accept => :json}    
+  end
+  
+  def header_with_token(token)
+    header.merge("X-Auth-Token" => token)
+  end
+end
+
+class String
+  def j_to_h
+    JSON.parse(self)
+  end
+end
 
 ##########################################################################
 # Keystone
 ##########################################################################
 class Keystone
+  include RestAPIBase
   attr_reader :ip_address, :port, :user_name, :password, :tenant_name
+  attr_reader :tenant_id
   #params[:ip_address]
   #params[:port]
   #params[:user_name]
@@ -20,62 +40,93 @@ class Keystone
     @user_name = params[:user_name]
     @password = params[:password]
     @tenant_name = params[:tenant_name]
+    @tenant_id = get_tenant_id(tenant_name)
+  end
+
+  def uri_base
+    "http://#{ip_address}:#{port}/v2.0"
   end
 
   def token
-    `curl -s -X POST http://#{ip_address}:#{port}/v2.0//tokens -H "Content-Type: application/json" -H "Accept: application/json" -H "User-Agent: python-keystoneclient" -d '{"auth": {"tenantName": "#{tenant_name}", "passwordCredentials": {"username": "#{user_name}", "password": "#{password}"}}}'| jq .access.token.id | sed -e 's/\"//g'`
+    uri = "#{uri_base}/tokens"
+    data = {"auth" =>{"tenantName" => "#{tenant_name}", 
+                      "passwordCredentials" => 
+                               {"username" => "#{user_name}", 
+                                "password"=> "#{password}"}}}
+    res = RestClient.post(uri, data.to_json, basic_header).j_to_h
+    return res["access"]["token"]["id"]
   end
-  
+
+  def get_tenant_id(name)
+    uri = "#{uri_base}/tenants"
+    tenants = RestClient.get(uri, header_with_token(token)).j_to_h
+    return tenants["tenants"].detect{|t| t["name"] == name}["id"]
+  end
 end
 
 ##########################################################################
 # APIWithIdendity
 ##########################################################################
 class APIWithIdendity
+  attr_reader :ip_address, :port
   attr_reader :keystone
 
-  def initialize(keystone)
-    @keystone = keystone
-  end  
+  #params[:ip_address] neutron api endpoint
+  #params[:port] neutron api endpoint port
+  #params[:ketstone] keystone object
+  def initialize(params)
+    @ip_address = params[:ip_address]
+    @port = params[:port]
+    @keystone = params[:keystone]
+  end
+end
+
+##########################################################################
+# nova
+##########################################################################
+class Nova < APIWithIdendity
+  attr_reader :ip_address, :port
+  
+  def uri_base
+    "http://#{ip_address}:#{port}/v2"
+  end
+
+  def header
+    header_with_token(token)
+  end
+
+  def id_by_name(name)
+    uri = "#{uri_base}#{keystone.tenant_id}/servers/"
+    servers = RestClient.get(uri, header).j_to_h
+  end
 end
 
 ##########################################################################
 # Neutron
 ##########################################################################
+
+################
+# models
+################
 class Port
   attr_reader :uuid
 end
 
-class NeutronAPIBase < APIWithIdendity
-  attr_reader :ip_address, :port
-  
-  #params[:ip_address] neutron api endpoint
-  #params[:port] neutron api endpoint port
-  #params[:keystone] keystone
-  def initialize(params)
-    super(params[:keystone])
-    @ip_address = params[:ip_address]
-    @port = params[:port]
-  end
-end
-
-class SecurityGroupAPI < NeutronAPIBase
+class SecurityGroupAPI < APIWithIdendity
   def list    
     puts "in SG list"
   end
 end
 
-class SecurityGroupRuleAPI < NeutronAPIBase  
+class SecurityGroupRuleAPI < APIWithIdendity  
 end
 
-class PortAPI < NeutronAPIBase
+class PortAPI < APIWithIdendity
   def show(uuid)
     return Port.new(uuid)
   end
   
   def ports_by_device_id(device_id)
-    `curl -s -X GET http://#{ip_address}:#{port}/v2.0//tokens -H "Content-Type: application/json" -H "Accept: application/json" -H "User-Agent: python-keystoneclient" -d '{"auth": {"tenantName": "#{tenant_name}", "passwordCredentials": {"username": "#{user_name}", "password": "#{password}"}}}'| jq .access.token.id | sed -e 's/\"//g'`
-    # -H "Accept: application/json" -H "X-Auth-Token: $TOKEN"
   end
 end
 
@@ -131,3 +182,6 @@ keystone = Keystone.new(:ip_address => "192.168.122.36", :port=>"5000",
 
 neutron = NeutronAPI.new(:ip_address => "192.168.122.36", :port => "9696", :keystone => keystone)
 
+nova = Nova.new(:ip_address => "192.168.122.36", :port => "35357", :keystone => keystone)
+
+puts keystone.tenant_id

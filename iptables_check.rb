@@ -126,27 +126,41 @@ protected
     all_sgr = []
     port.sgids.each do |sgid| 
       #collect ingress ip address from my sg
-      all_ports.select{||}
+      all_ports.select{|p| p.sgids.include?(sgid)}.each do |_port|
+        #skip myself
+        next if _port.mac_address == port.mac_address
+    
+        _port.fixed_ips.each do |ip|
+          params = {"direction" => "ingress",
+            "source_ip_prefix" => "#{ip["ip_address"]}/32"}
+          
+          all_sgr << SecurityGroupRule.new(params)
+        end
+      end
       
       #collect ingress ip address from remote_sg
       neutron.sgrs.list_by_sgid(sgid).each do |sgr|
         next unless sgr.remote_group_id
         
-        ports = all_ports.select do |port|
+        ports = all_ports.select do |_port|
           port.sgids.include?(sgr.remote_group_id)
         end
 
-        ports.map do |port|
+        ports.map do |_port|
           if sgr.direction == "ingress"
-            params = {"direction" => sgr.direction,
-              "source_ip_prefix" => "#{port.ip_address}/32"}
-
-            all_sgr << SecurityGroupRule.new(params)
+            _port.fixed_ips.each do |ip|
+              params = {"direction" => sgr.direction,
+                "source_ip_prefix" => "#{ip["ip_address"]}/32"}
+              
+              all_sgr << SecurityGroupRule.new(params)
+            end
           elsif sgr.direction == "egress"
-            params = {"direction" => sgr.direction,
-              "dest_ip_prefix" => "#{port.ip_address}/32"}
-
-            all_sgr << SecurityGroupRule.new(params)
+            _port.fixed_ips.each do |ip|
+              params = {"direction" => sgr.direction,
+                "dest_ip_prefix" => "#{ip["ip_address"]}/32"}
+              
+              all_sgr << SecurityGroupRule.new(params)
+            end
           else
             puts "WARNING: invalid direction #{sgr.direction}"
           end

@@ -41,7 +41,7 @@ protected
                         rule.port_range_min,
                         rule.port_range_max)
       next if args == ""
-      args += "-j RETURN"
+      args += " -j RETURN"
       pp args
       iptables_rules << args
     end
@@ -121,98 +121,126 @@ protected
   
   def _check_one_port(ipt_data, port)
     puts "=========================================="
-    all_ports = neutron.ports.list
-
     #collect all sgr
     all_sgr = []
+    all_ports = neutron.ports.list
+
     port.sgids.each do |sgid| 
-      #collect ingress ip address from my sg
-      all_ports.select{|p| p.sgids.include?(sgid)}.each do |_port|
-        #skip myself
-        next if _port.mac_address == port.mac_address
-    
-        _port.fixed_ips.each do |ip|
-          params = {"direction" => "ingress",
-            "source_ip_prefix" => "#{ip["ip_address"]}/32"}
-          
-          puts "item found #{_port.mac_address}, #{ip["ip_address"]}"
-          all_sgr << SecurityGroupRule.new(params)
-        end
-      end
-
-      #collect ingress ip address from remote_sg
-      neutron.sgrs.list_by_sgid(sgid).each do |sgr|
-        all_sgr << sgr
-#        puts "remote_group_id => #{sgr.remote_group_id}, security_group_id => #{sgr.security_group_id}"
-        next unless sgr.remote_group_id 
-        next if sgr.remote_group_id == sgr.security_group_id
-        
-        ports = all_ports.select do |_port|
-          port.sgids.include?(sgr.remote_group_id)
-        end
-        
-        ports.map do |_port|
-          if sgr.direction == "ingress"
-            _port.fixed_ips.each do |ip|
-              params = {"direction" => sgr.direction,
-                "source_ip_prefix" => "#{ip["ip_address"]}/32"}
-              
-              all_sgr << SecurityGroupRule.new(params)
-            end
-          elsif sgr.direction == "egress"
-            _port.fixed_ips.each do |ip|
-              params = {"direction" => sgr.direction,
-                "dest_ip_prefix" => "#{ip["ip_address"]}/32"}
-              
-              all_sgr << SecurityGroupRule.new(params)
-            end
-          else
-            puts "WARNING: invalid direction #{sgr.direction}"
-          end
-        end
-      end
-
-      all_sgr += dhcp_rules(all_ports, sgid)
+      #ingress context
+      all_sgr += implicitly_allowed_ip_own_sg(all_ports, port, sgid)
+      all_sgr += allowed_rule(sgid)
+      all_sgr += implicitly_allowed_ip_remote_sg(all_ports, port, sgid)
+      all_sgr += dhcp_rules(port, all_ports)
       
+      #egress context
+      #TODO: qqq ...
+
+      pp to_ingress_iptable_rules(port, all_sgr)
     end  
 
     check_ingress(all_sgr, ipt_data, port)
     check_egress(all_sgr, ipt_data, port)
   end
 
-  def dhcp_rules(all_ports, sgid)
-    
-    all_ports.select{|p| p.sgids.include?(sgid) && 
-      p.device_owner =~ /dhcp/}.map do |dhcp_port|
+  def implicitly_allowed_ip_own_sg(all_ports, this_port, own_sgid)
+    sgr = []
+    #collect ingress ip address from my sg
+    all_ports.select{|p| p.sgids.include?(own_sgid)}.each do |_port|
+      #skip myself
+      next if _port.mac_address == this_port.mac_address
       
-      dhcp_port.fixed_ips.each do |ip|
+      _port.fixed_ips.each do |ip|
         params = {"direction" => "ingress",
           "source_ip_prefix" => "#{ip["ip_address"]}/32"}
         
         puts "item found #{_port.mac_address}, #{ip["ip_address"]}"
-        all_sgr << SecurityGroupRule.new(params)
-      
+        sgr << SecurityGroupRule.new(params)
+      end
+    end
+    return sgr
+  end
 
+  def allowed_rule(own_sgid)
+    neutron.sgrs.list_by_sgid(own_sgid).select{|s| 
+      s.direction == "ingress"}
+  end
+
+  def implicitly_allowed_ip_remote_sg(all_ports, this_port, own_sgid)
+    res_sgr = []
+    neutron.sgrs.list_by_sgid(own_sgid).each do |sgr|
+      next unless sgr.remote_group_id 
+      next if sgr.remote_group_id == sgr.security_group_id
+      
+      ports = all_ports.select do |_port|
+          this_port.sgids.include?(sgr.remote_group_id)
+      end
+      
+      this_ports.map do |_port|
+        if sgr.direction == "ingress"
+          _port.fixed_ips.each do |ip|
+            params = {"direction" => sgr.direction,
+              "source_ip_prefix" => "#{ip["ip_address"]}/32"}
+            
+            res_sgr << SecurityGroupRule.new(params)
+          end
+        elsif sgr.direction == "egress"
+          _port.fixed_ips.each do |ip|
+            params = {"direction" => sgr.direction,
+              "dest_ip_prefix" => "#{ip["ip_address"]}/32"}
+            
+            res_sgr << SecurityGroupRule.new(params)
+          end
+        else
+          puts "WARNING: invalid direction #{sgr.direction}"
+        end
+      end
+    end
+    return res_sgr
+  end
+
+  def dhcp_rules(port, all_ports)
+    
+    sgr = []
+
+    dhcp_ports = all_ports.select{ |p| 
+      port.network_id == p.network_id && 
+      p.device_owner =~ /dhcp/ &&
+      port.id != p.id
+    }
+
+    puts "dhcp_ports = #{dhcp_ports.inspect}"
+
+    dhcp_ports.each do |dhcp_port|
+      
+      dhcp_port.fixed_ips.each do |ip|
+        params = {"direction" => "ingress",
+          "source_ip_prefix" => "#{ip["ip_address"]}/32",
+          "protocol" => "udp",
+          "source_port_range_min" => 67,
+          "source_port_range_max" => 67,
+          "port_range_min" => 68,
+          "port_range_max" => 68}
+        
+        puts "item found dhcp #{ip["ip_address"]}"
+        sgr << SecurityGroupRule.new(params)
+      end
+    end
+    return sgr
+  end
+
+  def to_ingress_iptable_rules(port, sgrs)
+    chain_name = port_to_ingress_chain_name(port)
+    
+    _convert_sgr_to_iptables_rules(sgrs).map do |r|
+      "-A #{chain_name} #{r}"
     end
   end
 
   def check_ingress(all_sgr, ipt_data, port)
-    sgr = all_sgr.select{|s| s.direction == "ingress"}
     chain_name = port_to_ingress_chain_name(port)
     ipt = ipt_data.grep(/#{chain_name}/)
-
-    res = _convert_sgr_to_iptables_rules(sgr).map do |r|
-      "-A #{chain_name} #{r}"
-    end
-    pp res
   end
 
-  #inject ingress IPaddress rule from SG to SGrule list 
-  def ingress_sgrs(sgid)
-    ports = neutron.ports.list.select do |port| 
-      port.sgids.include?(sgid)
-    end
-  end
 
   def check_egress(all_sgr, ipt_data, port)
     

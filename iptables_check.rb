@@ -120,6 +120,7 @@ class IptablesValidator
 protected
   
   def _check_one_port(ipt_data, port)
+    puts "=========================================="
     all_ports = neutron.ports.list
 
     #collect all sgr
@@ -134,18 +135,22 @@ protected
           params = {"direction" => "ingress",
             "source_ip_prefix" => "#{ip["ip_address"]}/32"}
           
+          puts "item found #{_port.mac_address}, #{ip["ip_address"]}"
           all_sgr << SecurityGroupRule.new(params)
         end
       end
-      
+
       #collect ingress ip address from remote_sg
       neutron.sgrs.list_by_sgid(sgid).each do |sgr|
-        next unless sgr.remote_group_id
+        all_sgr << sgr
+#        puts "remote_group_id => #{sgr.remote_group_id}, security_group_id => #{sgr.security_group_id}"
+        next unless sgr.remote_group_id 
+        next if sgr.remote_group_id == sgr.security_group_id
         
         ports = all_ports.select do |_port|
           port.sgids.include?(sgr.remote_group_id)
         end
-
+        
         ports.map do |_port|
           if sgr.direction == "ingress"
             _port.fixed_ips.each do |ip|
@@ -166,10 +171,29 @@ protected
           end
         end
       end
-    end
+
+      all_sgr += dhcp_rules(all_ports, sgid)
+      
+    end  
 
     check_ingress(all_sgr, ipt_data, port)
     check_egress(all_sgr, ipt_data, port)
+  end
+
+  def dhcp_rules(all_ports, sgid)
+    
+    all_ports.select{|p| p.sgids.include?(sgid) && 
+      p.device_owner =~ /dhcp/}.map do |dhcp_port|
+      
+      dhcp_port.fixed_ips.each do |ip|
+        params = {"direction" => "ingress",
+          "source_ip_prefix" => "#{ip["ip_address"]}/32"}
+        
+        puts "item found #{_port.mac_address}, #{ip["ip_address"]}"
+        all_sgr << SecurityGroupRule.new(params)
+      
+
+    end
   end
 
   def check_ingress(all_sgr, ipt_data, port)

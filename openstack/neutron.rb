@@ -14,6 +14,14 @@ class Port < OpenStackObjectModel
   def sgids
     self.security_groups
   end
+
+  def mac_address
+    @myself["mac_address"].upcase
+  end
+
+  def _mac_address
+    @myself["mac_address"]
+  end
 end
 
 class SecurityGroup < OpenStackObjectModel

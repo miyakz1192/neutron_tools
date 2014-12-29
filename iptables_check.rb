@@ -381,14 +381,6 @@ class IptablesValidator
 
 protected
 
-  def delete_duplicated_rules(rules)
-    out = []
-    rules.each do |r|
-      next if out.include?(r)
-      out << r
-    end
-    out
-  end
   
   def _check_one_port(ipt_data, port)
     dputs "=========================================="
@@ -415,19 +407,40 @@ protected
     iputs "recognized rules are..."
     iputs "[ingress]"
     in_ipt_rules = to_ingress_iptable_rules(port, all_in_sgr)
-    ingress_iptables_rules = delete_duplicated_rules(in_ipt_rules)
+    ingress_iptables_rules = in_ipt_rules.uniq
     iputs "[egress]"
     eg_ipt_rules = to_egress_iptable_rules(port, all_out_sgr)
-    egress_iptables_rules =  delete_duplicated_rules(eg_ipt_rules)
+    egress_iptables_rules =  eg_ipt_rules.uniq
 
-    check_rule(ingress_iptables_rules, egress_iptables_rules)
+    check_ingress_rule(port, ingress_iptables_rules)
+    check_egress_rule(port, egress_iptables_rules)
   end
 
-  def check_rule(ingress_iptables_rules, egress_iptables_rules)
+  def check_ingress_rule(port, ingress_iptables_rules)
+    iputs "[check_ingress_rule]"
     real_iptables = `sudo iptables-save`.split("\n")
-    dputs real_iptables
-    dputs real_iptables.class.name
-    dpp real_iptables
+    diff(real_iptables.grep(/-A #{port_to_ingress_chain_name(port)}/),
+         ingress_iptables_rules)
+  end
+
+  def check_egress_rule(port, egress_iptables_rules)
+    iputs "[check_egress_rule]"
+    real_iptables = `sudo iptables-save`.split("\n")
+    egress_chain = port_to_egress_chain_name(port)
+    spoof_chain = port_to_egress_spoofing_chain_name(port)
+    diff(real_iptables.grep(/-A #{egress_chain}|-A #{spoof_chain}/),
+         egress_iptables_rules)    
+  end
+
+  def diff(array_a ,array_b)
+    dputs "////////// diff //////////"
+    array_a.each_with_index do |a, index|
+      if a == array_b[index]
+        iputs a
+      else
+        iputs "DIFFERENT FROM \"#{a}\" with \"#{array_b[index]}\""
+      end
+    end
   end
 end
 

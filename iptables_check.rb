@@ -445,15 +445,15 @@ protected
 end
 
 
-keystone = Keystone.new(:ip_address => "192.168.122.36", 
+keystone = Keystone.new(:ip_address => "192.168.122.84", 
                         :port=>"5000",
-                        :user_name => "admin", 
-                        :tenant_name => "admin", :password => "a")
+                        :user_name => "demo", 
+                        :tenant_name => "demo", :password => "a")
 
-neutron = NeutronAPI.new(:ip_address => "192.168.122.36", 
+neutron = NeutronAPI.new(:ip_address => "192.168.122.84", 
                          :port => "9696", :keystone => keystone)
 
-nova = NovaAPI.new(:ip_address => "192.168.122.36",
+nova = NovaAPI.new(:ip_address => "192.168.122.84",
                    :port => "8774", :keystone => keystone)
 
 openstack = {:nova => nova, :neutron => neutron}

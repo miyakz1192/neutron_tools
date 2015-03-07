@@ -24,8 +24,11 @@ class NovaAPI < APIWithIdendity
   end
 
   def servers
+    puts "servers"
     uri = "#{uri_base}/#{keystone.tenant_id}/servers/detail"
+    puts RestClient.get(uri, header)
     RestClient.get(uri, header).j_to_h["servers"].map do |o|
+#      puts("instance=#{o.name}")
       Instance.new(o)
     end
   end

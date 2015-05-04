@@ -40,10 +40,15 @@ class Consumers < Model
     res
   end
 
-  def connections_of_queue(queue_name)
+  def connection_of_queue(queue_name)
     con = @consumers.detect{|c| c["queue_name"] == queue_name}
-    return con["connection"] if con && con["connection"] 
-    return [{"ip" => "NOIP", "port" => "NOPORT"}]
+    if con && con["connection"] 
+      if con.class.name == "Array" && con.size > 1
+        puts "WARNING: connection sizes then 1(#{con.size})"
+      end
+      return con["connection"].first
+    end
+    return {"ip" => "NOIP", "port" => "NOPORT"}
   end
 
   def multi_consumers_on_queue?
@@ -56,10 +61,11 @@ class Consumers < Model
   #return::self
   def inject_channels(channels)
     channels_info = channels.channels
+#    puts "DEBUG channels first = #{channels_info}"
     @consumers.each do |co|
 #      puts "DEBUG => consumer #{co}"
-      channel = channels_info.select{|ch| ch[:id] == co[:id]}
-    #  puts "DEBUG => size = #{channel.size}"
+      channel = channels_info.select{|ch| ch["id"] == co["id"]}
+#      puts "DEBUG => size = #{channel.size}"
       next unless channel
 #      puts "DEBUG => channel #{channel}"
       co["connection"] = channel
@@ -99,14 +105,8 @@ if __FILE__ == $0
     puts "EXCHANGE = #{ex} and its queues"
     queues = bindings.find_queues_by_exchange_name(ex)
     queues.each do |q|
-#      puts "DEBUG queue_name = #{q}"
-      cons = consumers.connections_of_queue(q)
-#      puts "DEBUG consz = #{cons.size}, con => #{cons}"
-#      puts "DEBUG cons = #{cons}"
-      puts "  QUEUE = #{q}, consz=#{cons.size}"
-      cons.each do |con|
-        puts "    CONNECTION #{con["ip"]}:#{con["port"]}"
-      end
+      con = consumers.connection_of_queue(q)
+      puts "  QUEUE = #{q} #{con["ip"]}:#{con["port"]}" 
     end
   end
 end

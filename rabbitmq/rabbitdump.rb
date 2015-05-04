@@ -60,9 +60,10 @@ end
 
 if __FILE__ == $0
   #exp codes
-  endpoint = "http://127.0.0.1:15672"
+  endpoint = "http://192.168.122.84:15672"
   client = RabbitMQ::HTTP::Client.new(endpoint, :username => "guest", :password => "a")
-  
+  puts client.list_bindings
+=begin  
   rabbit = RabbitData.new(:exchanges => client.list_exchanges,
                           :bindings => client.list_bindings,
                           :queues => client.list_queues,
@@ -70,7 +71,6 @@ if __FILE__ == $0
   
   rabbit.draw("neutron")
   
-=begin  
   cons = RabbitConsumers.new.collect
   cons.collect
   puts "===1"

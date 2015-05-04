@@ -27,19 +27,6 @@ end
 class Consumers < Model
   attr_accessor :consumers
 
-  def find_consumers_by_queue(queue_name)
-    @consumers.select{|c| c[:queue_name] == queue_name}
-  end
-
-  def consumers_on_queue
-    res = []
-    @consumers.map{|c| c[:queue_name]}.uniq.each do |queue_name|
-      consumers = @consumers.select{|c| c[:queue_name] == queue_name}
-      res << {queue: queue_name, consumers: consumers}
-    end
-    res
-  end
-
   def connection_of_queue(queue_name)
     con = @consumers.detect{|c| c["queue_name"] == queue_name}
     if con && con["connection"] 
@@ -49,10 +36,6 @@ class Consumers < Model
       return con["connection"].first
     end
     return {"ip" => "NOIP", "port" => "NOPORT"}
-  end
-
-  def multi_consumers_on_queue?
-    consumers_on_queue.any?{|e| e[:consumers].size > 1}
   end
 
   #==inject_channels

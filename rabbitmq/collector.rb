@@ -1,15 +1,6 @@
 require "json"
 require 'rabbitmq/http/client'
 
-class Collector
-  def initialize(params)
-    @rsc_info = params.dup
-  end
-
-  def to_json
-    "{}"
-  end
-end
 
 module RemoteCommand
 protected
@@ -32,6 +23,29 @@ module RabbitMqClient
   end
 end
 
+class Collector
+  def initialize(params)
+    @rsc_info = params.dup
+  end
+
+  def to_json
+    "{}"
+  end
+
+  def write
+    `mkdir rabbit_mq_data 2> /dev/null`
+    file_name = self.class.name.gsub(/Collector/, "").downcase
+    open("rabbit_mq_data/#{file_name}.json", "w") do |out|
+      puts "#{self.class.name}"
+      out.write self.to_json
+    end
+  end
+
+  def collect
+    self
+  end
+end
+
 class ChannelsCollector < Collector
   include RemoteCommand
   attr_reader :channels
@@ -45,7 +59,7 @@ class ChannelsCollector < Collector
        ip: c[1].split(":")[0],
        port: c[1].split(":")[1]}
     end
-    self 
+    super 
   end
 
   def to_json
@@ -64,7 +78,7 @@ class ConsumersCollector < Collector
     @consumers = temp.map do |c| 
       {queue_name: c[0], id: c[1].gsub(/<|>/,"")}
     end 
-    self
+    super 
   end
 
   #output consumers info as json format
@@ -92,7 +106,7 @@ class BindingsCollector < Collector
 
   def collect
     @bindings = @client.list_bindings
-    self
+    super 
   end
 
   def to_json
@@ -109,15 +123,8 @@ if __FILE__ == $0
   host_info  = {host:          "192.168.122.84",
                 host_credential:{user: "miyakz",     
                                  passwd: "miyakz"}}
-
-  `mkdir rabbit_mq_data 2> /dev/null`
-
-  open("rabbit_mq_data/cannels.json", "w") do |out|
-    puts "ChannelsCollector"
-    out.write ChannelsCollector.new(host_info).collect.to_json
-    puts "ConsumersCollector"
-    out.write ConsumersCollector.new(host_info).collect.to_json 
-    puts "BindingsCollector"
-    out.write BindingsCollector.new(api_info).collect.to_json
-  end 
+ 
+  ChannelsCollector.new(host_info).collect.write
+  ConsumersCollector.new(host_info).collect.write
+  BindingsCollector.new(api_info).collect.write
 end

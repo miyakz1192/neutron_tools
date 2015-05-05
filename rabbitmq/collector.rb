@@ -11,6 +11,12 @@ protected
 
     `sshpass -p #{passwd} ssh -l #{user} -o StrictHostKeyChecking=no #{host} #{cmd}` 
   end
+
+  def rexec_with_split(cmd)
+    rexec(cmd).split("\n").map do |e|
+      e.split
+    end
+  end
 end
 
 module RabbitMqClient
@@ -34,8 +40,7 @@ class Collector
 
   def write
     `mkdir rabbit_mq_data 2> /dev/null`
-    file_name = self.class.name.gsub(/Collector/, "").downcase
-    open("rabbit_mq_data/#{file_name}.json", "w") do |out|
+    open("rabbit_mq_data/#{write_file_name}", "w") do |out|
       puts "#{self.class.name}"
       out.write self.to_json
     end
@@ -44,6 +49,12 @@ class Collector
   def collect
     self
   end
+
+protected
+
+  def write_file_name
+    "#{self.class.name.gsub(/Collector/, "").downcase}.json"
+  end
 end
 
 class ChannelsCollector < Collector
@@ -51,9 +62,8 @@ class ChannelsCollector < Collector
   attr_reader :channels
 
   def collect
-    temp = rexec("sudo rabbitmqctl -q list_channels pid  name").split("\n").map do |e|
-      e.split
-    end
+    temp = rexec_with_split(
+      "sudo rabbitmqctl -q list_channels pid  name")
     @channels = temp.map do |c| 
       {id: c[0].gsub(/<|>/,""), 
        ip: c[1].split(":")[0],
@@ -72,9 +82,7 @@ class ConsumersCollector < Collector
   attr_reader :consumers
 
   def collect
-    temp = rexec("sudo rabbitmqctl -q list_consumers").split("\n").map do |e|
-      e.split
-    end
+    temp = rexec_with_split("sudo rabbitmqctl -q list_consumers")
     @consumers = temp.map do |c| 
       {queue_name: c[0], id: c[1].gsub(/<|>/,"")}
     end 
@@ -114,17 +122,52 @@ class BindingsCollector < Collector
   end
 end 
 
+class HostInfoCollector < Collector
+  include RemoteCommand
+
+  attr_reader :ps, :lsof
+
+  def collect
+    ps_temp = rexec_with_split("sudo ps -ef")
+    @ps = ps_temp.map do |c|
+      {pid: c[1], cmd: c.values_at(7..c.size-1).join(" ")}
+    end
+
+    lsof_temp = rexec_with_split("sudo lsof")
+    @lsof = lsof_temp.map do |c|
+      {pid: c[1], whole: c.join(" ")}
+    end
+    super
+  end
+
+  def to_json
+    {host: {ps: @ps, lsof: @lsof}}.to_json
+  end
+
+protected
+
+  def write_file_name
+    "host_#{@rsc_info[:host]}.json"
+  end
+end
+
 if __FILE__ == $0
 
   api_info   = {api_endpoint: "http://192.168.122.84:15672",
                 api_credential: {user: "guest",
                                  passwd: "a"}}
 
+  host_credential = {user: "miyakz",
+                     passwd: "miyakz"}
+
   host_info  = {host:          "192.168.122.84",
-                host_credential:{user: "miyakz",     
-                                 passwd: "miyakz"}}
+                host_credential: host_credential}
  
   ChannelsCollector.new(host_info).collect.write
   ConsumersCollector.new(host_info).collect.write
   BindingsCollector.new(api_info).collect.write
+
+  #host information collector
+  HostInfoCollector.new(host_info).collect.write
+
 end

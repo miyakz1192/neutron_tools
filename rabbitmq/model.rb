@@ -22,6 +22,15 @@ class Channels < Model
   def connection(id)
     @channels.detect{|c| c[:id] == id}
   end
+
+  #==inject_hosts
+  #inject Hosts(class) info to channels info
+  #params1::hosts. Hosts object
+  #return::self
+  def inject_hosts(hosts)
+    puts "TODO:"   
+    self 
+  end
 end
 
 class Consumers < Model
@@ -71,7 +80,14 @@ class Bindings < Model
     res.delete("")
     res
   end
+end
 
+class Host
+    puts "TODO:"
+end
+
+class Hosts
+    puts "TODO:"
 end
 
 if __FILE__ == $0

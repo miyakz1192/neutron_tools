@@ -6,6 +6,8 @@ puts "reading consumers"
 consumers = Consumers.new.read
 puts "reading bindings"
 bindings = Bindings.new.read
+puts "reading queues"
+queues = Queues.new.read
 
 puts "normalize infomation(inject_process)"
 channels.inject_process(Host.read_hosts)
@@ -15,9 +17,10 @@ consumers.inject_channels(channels)
 puts "analyzing"
 bindings.exchanges.each do |ex|
   puts "EXCHANGE = #{ex} and its queues"
-  queues = bindings.find_queues_by_exchange_name(ex)
-  queues.each do |q|
+  qs = bindings.find_queues_by_exchange_name(ex)
+  qs.each do |q|
     con = consumers.connection_of_queue(q)
-    puts "  QUEUE = #{q}, con=#{con["ip"]}:#{con["port"]}, cmd=#{con["cmd"]}"
+    b = queues.backing_queue_status(q)
+    puts "  QUEUE = #{q}, len=#{b["len"]}, con=#{con["ip"]}:#{con["port"]}, cmd=#{con["cmd"]}"
   end
 end

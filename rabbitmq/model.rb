@@ -94,6 +94,20 @@ class Bindings < Model
   end
 end
 
+class Queues < Model
+  attr_accessor :queues
+
+  def backing_queue_status(queue_name)
+    q = find_by_name(queue_name)
+    return {} unless q
+    q["backing_queue_status"]
+  end
+
+  def find_by_name(queue_name)
+    @queues.detect{|q| q["name"] == queue_name}
+  end
+end
+
 class Host < Model
   attr_reader :host_name
 

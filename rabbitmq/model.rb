@@ -143,9 +143,12 @@ if __FILE__ == $0
   puts "reading bindings"
   bindings = Bindings.new.read
 
+  puts "normalize infomation(inject_process)"
   channels.inject_process(Host.read_hosts)
+  puts "normalize infomation(inject_channels)"
   consumers.inject_channels(channels)
 
+  puts "analyzing"
   bindings.exchanges.each do |ex|
     puts "EXCHANGE = #{ex} and its queues"
     queues = bindings.find_queues_by_exchange_name(ex)

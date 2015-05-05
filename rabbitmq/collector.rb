@@ -103,23 +103,34 @@ class ConsumersCollector < Collector
   end
 end
 
-class BindingsCollector < Collector
+class CollectorWithRabbitMqApi < Collector
   include RabbitMqClient
-  attr_reader :bindings
 
-  def initialize(params)
-    super(params)
-    @client = rabbit_mq_client
-  end
+  def self.define_basic_methods(_class)
+    data_source_variable_name = _class.name.gsub(/Collector/,"").downcase
 
-  def collect
-    @bindings = @client.list_bindings
-    super 
-  end
+    define_method(:initialize) do |params|
+      super(params)
+      @client = rabbit_mq_client
+    end
 
-  def to_json
-    {bindings: @bindings}.to_json
+    define_method(:collect) do
+      eval "@#{data_source_variable_name} = @client.list_#{data_source_variable_name}"
+      self
+    end
+
+    define_method(:to_json) do
+      eval "{#{data_source_variable_name}: @#{data_source_variable_name}}.to_json"
+    end
   end
+end
+
+class BindingsCollector < CollectorWithRabbitMqApi
+  define_basic_methods self
+end
+
+class QueuesCollector < CollectorWithRabbitMqApi
+  define_basic_methods self
 end 
 
 class HostInfoCollector < Collector
@@ -166,6 +177,7 @@ if __FILE__ == $0
   ChannelsCollector.new(host_info).collect.write
   ConsumersCollector.new(host_info).collect.write
   BindingsCollector.new(api_info).collect.write
+  QueuesCollector.new(api_info).collect.write
 
   #host information collector
   HostInfoCollector.new(host_info).collect.write

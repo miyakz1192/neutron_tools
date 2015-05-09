@@ -1,31 +1,74 @@
 require 'rabbitmq/http/client'
 require 'json'
+require 'ostruct'
 
-class Model
+module RabbitModel
+class Model < OpenStruct
+end
+
+class Channel < Model
+end
+
+class Queue <  Model
+end
+
+class Consumer <  Model
+end
+
+class Binding < Model
+end
+
+class Host < Model
+  #== source_port_process
+  #this method returns process that opens tcp connection
+  #that source port is port(argument)
+  #params1::source_port. tcp source port number.
+  def find_process_by_tcp_sport_num(tcp_sport_num)
+    temp = self.lsof.detect{|lsof| lsof["whole"] =~ /#{tcp_sport_num}->/}
+    return nil unless temp
+    temp = self.ps.detect{|ps| ps["pid"] == temp["pid"]}
+    return nil unless temp
+    return temp["cmd"]
+  end
+end
+
+class ModelContainer
   #== read
   #this methods read from json file from rabbit_mq_data(default).
   #and eliminate first key(ex: bindings) and set 
   #@#{self.class.name.downcase} (ex: @bindings)
-  def read
-    data = open("#{open_file_name}", "r") do |io|
+  def load
+    data = open(open_file_name, "r") do |io|
       JSON.load(io)
-    end["#{self.class.name.downcase}"]
-    eval "@#{self.class.name.downcase} = data"
+    end[models_name]
+    build_models(data)
     self
   end
 
 protected
 
+  def model_name
+    "#{self.class.name}".gsub(/Container|RabbitModel::/,"")
+  end
+
+  def models_name
+    "#{model_name.downcase}s"
+  end
+
+  def build_models(data)
+    eval("@#{models_name} = data.map{|d| #{model_name}.new(d)}")
+    #example: @channels = data.map{|d| Channel.new(d)}
+  end
+
   def open_file_name
-    "rabbit_mq_data/#{self.class.name.downcase}.json"
+    "rabbit_mq_data/#{models_name}.json"
   end
 end
 
-class Channels < Model
-  attr_accessor :channels
+class ChannelContainer < ModelContainer
 
-  def connection(id)
-    @channels.detect{|c| c[:id] == id}
+  def find_by_id(id)
+    @channels.detect{|c| c.id == id}
   end
 
   #==inject_process
@@ -33,118 +76,68 @@ class Channels < Model
   #this method assumes that ip address in channels info is host name
   #params1::hosts. Hosts object
   #return::self
-  def inject_process(hosts)
+  def inject_process(host_container)
     @channels.each do |ch|
-      host = hosts.detect{|h| h.host_name == ch["ip"]}
-      ch["cmd"] = nil #default
-      if host
-        ch["cmd"] = host.find_process_by_source_port_num(ch["port"])
-      end
+      host = host_container.find_by_channel(ch)
+      next unless host
+      ch.cmd = host.find_process_by_tcp_sport_num(ch.port)
     end
     self 
   end
 end
 
-class Consumers < Model
-  attr_accessor :consumers
+class ConsumerContainer < ModelContainer
 
-  def connection_of_queue(queue_name)
-    con = @consumers.detect{|c| c["queue_name"] == queue_name}
-    if con && con["connection"] 
+  def find_channel_by_queue_name(queue_name)
+    con = @consumers.detect{|c| c.queue_name == queue_name}
+    if con && con.channel
       if con.class.name == "Array" && con.size > 1
         puts "WARNING: connection sizes then 1(#{con.size})"
       end
-      return con["connection"].first
+      return con.channel
     end
-    return {"ip" => "NOIP", "port" => "NOPORT"}
+    return Channel.new({ip: "NOIP", port: "NOPORT"})
   end
 
   #==inject_channels
   #inject channels(class) info to consumers info
   #params1::channels, Channels object
   #return::self
-  def inject_channels(channels)
-    channels_info = channels.channels
-#    puts "DEBUG channels first = #{channels_info}"
+  def inject_channels(channel_container)
     @consumers.each do |co|
-#      puts "DEBUG => consumer #{co}"
-      channel = channels_info.select{|ch| ch["id"] == co["id"]}
-#      puts "DEBUG => size = #{channel.size}"
+      channel = channel_container.find_by_id(co.id)
       next unless channel
-#      puts "DEBUG => channel #{channel}"
-      co["connection"] = channel
+      co.channel = channel
     end
   end
 end
 
-class Bindings < Model
-  attr_accessor :bindings
+class BindingContainer < ModelContainer
 
   #== find_queues_by_exchange_name
   #params1::ex_name. exchange name
   #return::array of string. queue name string array
-  def find_queues_by_exchange_name(ex_name)
-    @bindings.map{|b| b["destination"] if b["source"] == ex_name}.compact
+  def find_queue_names_by_exchange_name(ex_name)
+    @bindings.map{|b| b.destination if b.source == ex_name}.compact
   end
 
-  def exchanges
-    res = @bindings.map{|b| b["source"]}.uniq
+  def exchange_names
+    res = @bindings.map{|b| b.source}.uniq
     res.delete("")
     res
   end
 end
 
-class Queues < Model
-  attr_accessor :queues
-
-  def backing_queue_status(queue_name)
-    q = find_by_name(queue_name)
-    return {} unless q
-    q["backing_queue_status"]
-  end
-
+class QueueContainer < ModelContainer
   def find_by_name(queue_name)
-    @queues.detect{|q| q["name"] == queue_name}
+    @queues.detect{|q| q.name == queue_name}
   end
 end
 
-class Host < Model
-  attr_reader :host_name
-
-  def initialize(host_name)
-    @host_name = host_name
+class HostContainer < ModelContainer
+  def find_by_channel(ch)
+    @hosts.detect{|h| h.name == ch.ip}
   end
+end
 
-  def lsof
-    @host["lsof"]
-  end
-
-  def ps
-    @host["ps"]
-  end
-
-  #== source_port_process
-  #this method returns process that opens tcp connection
-  #that source port is port(argument)
-  #params1::source_port. tcp source port number.
-  def find_process_by_source_port_num(source_port_num)
-    temp = lsof.detect{|lsof| lsof["whole"] =~ /#{source_port_num}->/}
-    return nil unless temp
-    temp = ps.detect{|ps| ps["pid"] == temp["pid"]}
-    return nil unless temp
-    return temp["cmd"]
-  end
-
-  def open_file_name
-    "rabbit_mq_data/host_#{@host_name}.json"
-  end
-
-  def self.read_hosts
-    hosts = []
-    Dir::glob("rabbit_mq_data/host_*.json").each do |f|
-      host_name = File.basename(f).scan(/host_(.*).json/)[0][0]
-      hosts << Host.new(host_name).read
-    end
-    hosts
-  end
 end

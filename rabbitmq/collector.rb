@@ -133,7 +133,7 @@ class QueuesCollector < CollectorWithRabbitMqApi
   define_basic_methods self
 end 
 
-class HostInfoCollector < Collector
+class HostCollector < Collector
   include RemoteCommand
 
   attr_reader :ps, :lsof
@@ -152,13 +152,34 @@ class HostInfoCollector < Collector
   end
 
   def to_json
-    {host: {ps: @ps, lsof: @lsof}}.to_json
+    to_hash.to_json
+  end
+
+  def to_hash
+    {host: {name: @rsc_info[:host], ps: @ps, lsof: @lsof}}
   end
 
 protected
 
   def write_file_name
     "host_#{@rsc_info[:host]}.json"
+  end
+end
+
+class HostsCollector < Collector
+
+  #==collect multi hosts info
+  #param1::hosts_info(Array) array of host_info array
+  def collect
+    @hosts_info = []
+    @rsc_info.each do |hi|
+      @hosts_info << HostCollector.new(hi).collect.to_hash[:host]
+    end
+    super
+  end
+
+  def to_json
+    {hosts: @hosts_info}.to_json
   end
 end
 
@@ -180,6 +201,6 @@ if __FILE__ == $0
   QueuesCollector.new(api_info).collect.write
 
   #host information collector
-  HostInfoCollector.new(host_info).collect.write
+  HostsCollector.new([host_info]).collect.write
 
 end

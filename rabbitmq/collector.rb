@@ -59,7 +59,6 @@ end
 
 class ChannelsCollector < Collector
   include RemoteCommand
-  attr_reader :channels
 
   def collect
     temp = rexec_with_split(
@@ -79,7 +78,6 @@ end
 
 class ConsumersCollector < Collector
   include RemoteCommand
-  attr_reader :consumers
 
   def collect
     temp = rexec_with_split("sudo rabbitmqctl -q list_consumers")
@@ -135,8 +133,6 @@ end
 
 class HostCollector < Collector
   include RemoteCommand
-
-  attr_reader :ps, :lsof
 
   def collect
     ps_temp = rexec_with_split("sudo ps -ef")

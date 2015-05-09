@@ -38,9 +38,9 @@ class Collector
     "{}"
   end
 
-  def write
+  def save
     `mkdir rabbit_mq_data 2> /dev/null`
-    open("rabbit_mq_data/#{write_file_name}", "w") do |out|
+    open("rabbit_mq_data/#{save_file_name}", "w") do |out|
       puts "#{self.class.name}"
       out.write self.to_json
     end
@@ -52,7 +52,7 @@ class Collector
 
 protected
 
-  def write_file_name
+  def save_file_name
     "#{self.class.name.gsub(/Collector/, "").downcase}.json"
   end
 end
@@ -161,7 +161,7 @@ class HostCollector < Collector
 
 protected
 
-  def write_file_name
+  def save_file_name
     "host_#{@rsc_info[:host]}.json"
   end
 end
@@ -195,12 +195,12 @@ if __FILE__ == $0
   host_info  = {host:          "192.168.122.84",
                 host_credential: host_credential}
  
-  ChannelsCollector.new(host_info).collect.write
-  ConsumersCollector.new(host_info).collect.write
-  BindingsCollector.new(api_info).collect.write
-  QueuesCollector.new(api_info).collect.write
+  ChannelsCollector.new(host_info).collect.save
+  ConsumersCollector.new(host_info).collect.save
+  BindingsCollector.new(api_info).collect.save
+  QueuesCollector.new(api_info).collect.save
 
   #host information collector
-  HostsCollector.new([host_info]).collect.write
+  HostsCollector.new([host_info]).collect.save
 
 end

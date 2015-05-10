@@ -89,14 +89,15 @@ end
 class ConsumerContainer < ModelContainer
 
   def find_channel_by_queue_name(queue_name)
-    con = @consumers.detect{|c| c.queue_name == queue_name}
-    if con && con.channel
-      if con.class.name == "Array" && con.size > 1
-        puts "WARNING: connection sizes then 1(#{con.size})"
-      end
-      return con.channel
+    con = @consumers.select{|c| c.queue_name == queue_name}
+    if con.size == 1
+      return con.first.channel
+    elsif con.size == 0
+      return Channel.new({ip: "NOIP", port: "NOPORT"})
+    elsif con.size > 1
+      puts "WARNING: connection sizes then 1(#{con.size})"
+      return con.first.channel
     end
-    return Channel.new({ip: "NOIP", port: "NOPORT"})
   end
 
   #==inject_channels

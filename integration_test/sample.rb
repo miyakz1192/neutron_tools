@@ -3,6 +3,16 @@ require 'pp'
 require 'logger'
 
 class TestEnvironmentBase
+  def initialize(params = {})
+    @logger = Logger.new(STDOUT)
+  end
+protected
+  def logger
+    @logger
+  end
+end
+
+class IndividualTestEnvironmentBase < TestEnvironmentBase
   @@auth_url = ""
 
   # input authentication info
@@ -10,7 +20,7 @@ class TestEnvironmentBase
   # @param params[:password] [String] test user password
   # @param params[:tenant_name] [String] test tenant_name
   def initialize(params = {})
-    @logger = Logger.new(STDOUT)
+    super
     @auth_info = {
       :provider => 'OpenStack',
       :openstack_api_key => params[:password],
@@ -37,16 +47,12 @@ class TestEnvironmentBase
   end
 
 protected
-  def logger
-    @logger
-  end
-
   def auth_info
     @auth_info
   end
 end
 
-class IdentityTestEnvironment < TestEnvironmentBase
+class IdentityTestEnvironment < IndividualTestEnvironmentBase
   #initialize
   #params must be admin_auth_info
   def initialize(params)
@@ -115,7 +121,7 @@ protected
   end
 end
 
-class ImageTestEnvironment < TestEnvironmentBase
+class ImageTestEnvironment < IndividualTestEnvironmentBase
   IMAGE_FILE_DIR = "#{File.expand_path(File.dirname(__FILE__))}/materials/images"
 
   # params is test_auth_info
@@ -172,9 +178,71 @@ protected
     end
   end
 end
-##############################################################################
+
+class InstanceOpenStackObject
+  def self.can_initialize?(object_name)
+    /^instance/ =~ object_name
+  end
+end
+
+class NetworkOpenStackObject
+  def self.can_initialize?(object_name)
+    /^net/ =~ object_name
+  end
+end
+
+class RouterOpenStackObject
+  def self.can_initialize?(object_name)
+    /^router/ =~ object_name
+  end
+end
+
+class OpenStackObject
+  def self.instanciate
+    puts self.class.name
+    puts self.class.constants.grep(/OpenStackObject/).delete_if{|i| i == self.class.name}
+  end
+end
+
+
+
+class TestEnvironment < TestEnvironmentBase
+  def initialize(params = {})
+    super
+    @obj = []
+  end
+
+  def objects(&block)
+    block.call(self)
+    self
+  end
+
+  def method_missing(meth_name, *args)
+    logger.info("METHOD MISSING #{meth_name.inspect},#{args.inspect}")
+    obj_name = meth_name
+    obj << obj_name
+    cmd = "@#{obj_name} = \"a\""
+    logger.info("CMD = #{cmd.inspect}")
+    eval(cmd)
+  end
+
+  def build
+    logger.info("BUILD OBJECTS")
+    logger.info(obj.inspect)
+  end
+
+  def connections(&block)
+    logger.info("DEFINE CONNECTIONS")
+    block.call(self)
+  end
+
+  def obj
+    @obj
+  end
+end
+############################################################################
 #  config area
-##############################################################################
+############################################################################
 #define OpenStack admin authentication info
 admin_auth_info = {:user_name => "admin",
                    :password => "a", 
@@ -184,23 +252,48 @@ test_auth_info  = {:user_name => "test_user",
                    :password => "a", 
                    :tenant_name => "test"}
 #auth url
-TestEnvironmentBase.auth_url = "http://192.168.122.84:5000/v2.0"
+IndividualTestEnvironmentBase.auth_url = "http://192.168.122.84:5000/v2.0"
 #instance image
 test_image = "cirros-0.3.4-x86_64-disk.img"
 # cirros-0.3.4-x86_64-disk.img is available following url
 # wget http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img
-##############################################################################
+############################################################################
 #  code area
-##############################################################################
-# for OpenStack admin privilege
-id_env = IdentityTestEnvironment.new(admin_auth_info)
-id_env.create(test_auth_info)
+############################################################################
+## for OpenStack admin privilege
+#id_env = IdentityTestEnvironment.new(admin_auth_info)
+#id_env.create(test_auth_info)
+#
+#image_env = ImageTestEnvironment.new(test_auth_info)
+#image_env.create({:image_name => test_image})
+#
+#image_env.delete({:image_name => test_image})
+#id_env.delete(test_auth_info)
 
-image_env = ImageTestEnvironment.new(test_auth_info)
-image_env.create({:image_name => test_image})
+env = TestEnvironment.new
+############################################################################
+#  DSL area 
+############################################################################
 
-image_env.delete({:image_name => test_image})
-id_env.delete(test_auth_info)
+env.objects do |e|
+  e.net1 "192.168.1.0/24"
+  e.net2 "192.168.2.0/24"
+  e.router1
+  e.instance1
+  e.instance2
+end
+
+puts "=================================="
+puts env.obj.inspect
+puts "=================================="
+
+env.connections do |e|
+#  e.router1 e.net1
+#  e.instance1 e.net1 e.net2
+end
+
+OpenStackObject.instanciate
+
 
 ##for test privilege
 #nova = Fog::Compute.new({

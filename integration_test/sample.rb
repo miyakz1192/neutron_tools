@@ -275,24 +275,40 @@ env = TestEnvironment.new
 #  DSL area 
 ############################################################################
 
-env.objects do |e|
-  e.net1 "192.168.1.0/24"
-  e.net2 "192.168.2.0/24"
-  e.router1
-  e.instance1
-  e.instance2
+env.build do
+  network "net1", "192.168.1.0/24"
+  network "net2", "192.168.2.0/24"
+  network "net3", "192.168.3.0/24"
+  router "router1", "net1", "net2", {:routes => ""}
+  instance "instance2", net1, net2
+
+#TODO:
+#  router1.add_interface net1
+#  router1.add_interface net2
+
+#  OpenStackObject.instanciate
+  #
+
+# TODO:
+#  instance("instance1") do
+#    network net1,net2
+#    image "cirros.img"
+#  end
+
+#TODO:
+#  application("app1") do 
+#    copy "src_file", "dst_file"
+#    shell "sudo chkconfig add /etc/init.d/S99z_udp"
+#    method "default" do #default is network_namespace_injection
+#      instance_user_name "aaa"
+#      instance_password "bbb"
+#      network_node_user_name "zzz"
+#      network_node_password "qqq"
+#    end
+#  end
+#
+#  app1.apply(instance1)
 end
-
-puts "=================================="
-puts env.obj.inspect
-puts "=================================="
-
-env.connections do |e|
-#  e.router1 e.net1
-#  e.instance1 e.net1 e.net2
-end
-
-OpenStackObject.instanciate
 
 
 ##for test privilege

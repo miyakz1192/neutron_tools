@@ -3,24 +3,31 @@ require 'pp'
 require 'logger'
 
 class TestEnvironmentBase
+  @@auth_url = ""
+
   def initialize(params = {})
     @logger = Logger.new(STDOUT)
+    init_auth_info(params)
   end
+
 protected
   def logger
     @logger
   end
-end
 
-class IndividualTestEnvironmentBase < TestEnvironmentBase
-  @@auth_url = ""
+  def self.auth_url=(url)
+    @@auth_url = url
+  end
+
+  def auth_info
+    @auth_info
+  end
 
   # input authentication info
   # @param params[:user_name] [String] test user name
   # @param params[:password] [String] test user password
   # @param params[:tenant_name] [String] test tenant_name
-  def initialize(params = {})
-    super
+  def init_auth_info(params)
     @auth_info = {
       :provider => 'OpenStack',
       :openstack_api_key => params[:password],
@@ -28,6 +35,17 @@ class IndividualTestEnvironmentBase < TestEnvironmentBase
       :openstack_auth_url => "#{@@auth_url}/tokens",
       :openstack_tenant => params[:tenant_name]
     }
+  end 
+end
+
+class IndividualTestEnvironmentBase < TestEnvironmentBase
+
+  # input authentication info
+  # @param params[:user_name] [String] test user name
+  # @param params[:password] [String] test user password
+  # @param params[:tenant_name] [String] test tenant_name
+  def initialize(params = {})
+    super(params)
   end
 
   def create(params = {})
@@ -40,15 +58,6 @@ class IndividualTestEnvironmentBase < TestEnvironmentBase
     logger.info("*** [START] delete@#{self.class.name} ***")
     delete_impl(params)
     logger.info("*** [END] delete@#{self.class.name} ***")
-  end
-
-  def self.auth_url=(url)
-    @@auth_url = url
-  end
-
-protected
-  def auth_info
-    @auth_info
   end
 end
 
@@ -179,37 +188,88 @@ protected
   end
 end
 
-class InstanceOpenStackObject
-  def self.can_initialize?(object_name)
-    /^instance/ =~ object_name
-  end
-end
 
-class NetworkOpenStackObject
-  def self.can_initialize?(object_name)
-    /^net/ =~ object_name
-  end
-end
+module OpenStackObject
 
-class RouterOpenStackObject
-  def self.can_initialize?(object_name)
-    /^router/ =~ object_name
-  end
-end
+  class OpenStackObjectBase
+    @@neutron = nil
 
-class OpenStackObject
-  def self.instanciate
-    puts self.class.name
-    puts self.class.constants.grep(/OpenStackObject/).delete_if{|i| i == self.class.name}
+    def self.test_environment(env)
+      @@test_environment = env
+    end
+
+    def env
+      @@test_environment
+    end
+
+    def neutron
+      @@neutron if @@neutron
+      @@neutron = Fog::Network.new(env.auth_info)
+    end
+
+    def logger
+      env.logger
+    end
+
+    def tenant_id
+      env.auth_info.tenant_id
+    end
+  end
+
+  class Instance < OpenStackObjectBase
+    attr_accessor :name, :networks
+
+    # @param name [String] instance name
+    # @param 0..last [Network]  network object
+    def initialize(name, *args)
+      raise "not Network object" if args.detect{|a| a.class != Network}
+      @name = name
+      @networks = args
+    end
+  end
+  
+  class Network < OpenStackObjectBase
+    attr_accessor :name, :cidr
+    def initialize(name, cidr)
+      @name = name
+      @cidr = cidr
+    end
+
+    def deploy
+      neutron.networks.create(:name => name,
+                              :tenant_id => tenant_id)
+    end
+  end
+  
+  class Router < OpenStackObjectBase
+    def initialize(name, *args)
+    end
+
+    def add_interface(net)
+      raise "not implement error"
+    end
+
+    def delete_interface(net)
+      raise "not implement error"
+    end
+  end
+
+  class Routers
+    def self.delete_all
+      raise "not implement error"
+    end
   end
 end
 
 
 
 class TestEnvironment < TestEnvironmentBase
+  attr_accessor :admin_auth_info, :test_auth_info
   def initialize(params = {})
-    super
-    @obj = []
+    @admin_auth_info = params[:admin_auth_info]
+    @test_auth_info = params[:test_auth_info]
+    super(test_auth_info) # init auth_info as test_auth_info
+    OpenStackObjectBase.test_environment(self)
   end
 
   def objects(&block)
@@ -217,27 +277,38 @@ class TestEnvironment < TestEnvironmentBase
     self
   end
 
-  def method_missing(meth_name, *args)
-    logger.info("METHOD MISSING #{meth_name.inspect},#{args.inspect}")
-    obj_name = meth_name
-    obj << obj_name
-    cmd = "@#{obj_name} = \"a\""
-    logger.info("CMD = #{cmd.inspect}")
-    eval(cmd)
-  end
+#  def method_missing(meth_name, *args)
+#    logger.info("METHOD MISSING #{meth_name.inspect},#{args.inspect}")
+#    obj_name = meth_name
+#    obj << obj_name
+#    cmd = "@#{obj_name} = \"a\""
+#    logger.info("CMD = #{cmd.inspect}")
+#    eval(cmd)
+#  end
 
-  def build
+  def build(&block)
     logger.info("BUILD OBJECTS")
-    logger.info(obj.inspect)
+    self.instance_eval(&block)
   end
 
   def connections(&block)
     logger.info("DEFINE CONNECTIONS")
-    block.call(self)
   end
 
-  def obj
-    @obj
+protected
+  def network(name, cidr)
+    puts "creating network #{name},#{cidr}"
+    return name
+  end
+
+  def router(name, *args)
+    puts "creating router #{name},#{args.inspect}"
+    return name
+  end
+
+  def instance(name, *args)
+    puts "creating instance #{name},#{args.inspect}"
+    return name
   end
 end
 ############################################################################
@@ -270,14 +341,15 @@ test_image = "cirros-0.3.4-x86_64-disk.img"
 #image_env.delete({:image_name => test_image})
 #id_env.delete(test_auth_info)
 
-env = TestEnvironment.new
+env = TestEnvironment.new(:admin_auth_info => admin_auth_info, 
+                          :test_auth_info => test_auth_info)
 ############################################################################
 #  DSL area 
 ############################################################################
 
 env.build do
-  network "net1", "192.168.1.0/24"
-  network "net2", "192.168.2.0/24"
+  net1 = network "net1", "192.168.1.0/24"
+  net2 = network "net2", "192.168.2.0/24"
   network "net3", "192.168.3.0/24"
   router "router1", "net1", "net2", {:routes => ""}
   instance "instance2", net1, net2

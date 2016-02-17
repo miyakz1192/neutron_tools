@@ -1,12 +1,5 @@
-class TestEnvironmentBase
-  def initialize(params = {})
-    @logger = Logger.new(STDOUT)
-  end
 
-protected
-  def logger
-    @logger
-  end
+class TestEnvironmentBase < ObjectBase
 end
 
 class IndividualTestEnvironmentBase < TestEnvironmentBase

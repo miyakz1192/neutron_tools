@@ -1,9 +1,10 @@
 require 'pp'
 require 'logger'
-require 'open_stack_object'
-require 'open_stack_driver'
-require 'auth_info'
-require 'test_environment'
+require './object_base'
+require './open_stack_object'
+require './test_environment'
+require './open_stack_driver'
+require './auth_info'
 
 ############################################################################
 #  config area

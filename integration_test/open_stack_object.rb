@@ -1,6 +1,6 @@
 module OpenStackObject
 
-  class OpenStackObjectBase < TestEnvironmentBase
+  class OpenStackObjectBase < ObjectBase
     attr_reader :concrete
 
     @@auth_info = nil

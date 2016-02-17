@@ -1,51 +1,59 @@
 require 'fog'
 require 'pp'
 require 'logger'
+require 'ostruct'
+
+class AuthInfo < OpenStruct
+#this class represents authentication infomation
+#has thease attr
+# :password,String
+# :user_name,String
+# :auth_url,String
+# :tenant_name,String
+end
+
+class OpenStackDriverFactory
+  #create OpenStack Driver
+  #now version only supports Fog
+  #if other driver supports thease must have Fog like interface
+  #@param kind [Symbol] :Network, :Identity, :Image, :Compute
+  #@param auth_info [AuthInfo] authentication infomation
+  def create(kind,auth_info)
+    auth = convert_auth_info(auth_info)
+    eval("Fog::#{kind}.new(auth)")
+  end
+
+protected
+  # convert AuthInfo to Fog auth hash
+  # @param auth_info [AuthInfo] authentication infomation
+  def convert_auth_info(auth_info)
+    {
+      :provider => 'OpenStack',
+      :openstack_api_key => auth_info.password,
+      :openstack_username => auth_info.user_name,
+      :openstack_auth_url => "#{auth_info.auth_url}/tokens",
+      :openstack_tenant => auth_info.tenant_name
+    }
+  end
+end
 
 class TestEnvironmentBase
-  @@auth_url = ""
-
   def initialize(params = {})
     @logger = Logger.new(STDOUT)
-    init_auth_info(params)
   end
 
 protected
   def logger
     @logger
   end
-
-  def self.auth_url=(url)
-    @@auth_url = url
-  end
-
-  def auth_info
-    @auth_info
-  end
-
-  # input authentication info
-  # @param params[:user_name] [String] test user name
-  # @param params[:password] [String] test user password
-  # @param params[:tenant_name] [String] test tenant_name
-  def init_auth_info(params)
-    @auth_info = {
-      :provider => 'OpenStack',
-      :openstack_api_key => params[:password],
-      :openstack_username => params[:user_name],
-      :openstack_auth_url => "#{@@auth_url}/tokens",
-      :openstack_tenant => params[:tenant_name]
-    }
-  end 
 end
 
 class IndividualTestEnvironmentBase < TestEnvironmentBase
 
   # input authentication info
-  # @param params[:user_name] [String] test user name
-  # @param params[:password] [String] test user password
-  # @param params[:tenant_name] [String] test tenant_name
+  #@param auth_info [AuthInfo] authentication infomation
   def initialize(params = {})
-    super(params)
+    super
   end
 
   def create(params = {})
@@ -63,21 +71,19 @@ end
 
 class IdentityTestEnvironment < IndividualTestEnvironmentBase
   #initialize
-  #params must be admin_auth_info
-  def initialize(params)
-    super(params)
-    #params set to auth_info
-    @keystone = Fog::Identity.new(auth_info) 
+  #@param auth_info [AuthInfo] authentication infomation
+  def initialize(auth_info)
+    super
+    @keystone = OpenStackDriverFactory.new.create(:Identity,
+                                                  auth_info)
   end
 
   # ensure given user_name/tenant_name exists
-  # @param params[:user_name] [String] test user name
-  # @param params[:password] [String] test user password
-  # @param params[:tenant_name] [String] test tenant_name
-  def create_impl(params)
-    user_name   = params[:user_name]
-    password    = params[:password]
-    tenant_name = params[:tenant_name]
+  #@param auth_info [AuthInfo] authentication infomation
+  def create_impl(auth_info)
+    user_name   = auth_info.user_name
+    password    = auth_info.password
+    tenant_name = auth_info.tenant_name
 
     logger.info("check tenant \"#{tenant_name}\" exists")
     unless keystone.tenants.detect{|t| t.name == tenant_name}
@@ -101,8 +107,8 @@ class IdentityTestEnvironment < IndividualTestEnvironmentBase
   # @param params[:password] [String] test user password
   # @param params[:tenant_name] [String] test tenant_name
   def delete_impl(params)
-    user_name   = params[:user_name]
-    tenant_name = params[:tenant_name]
+    user_name   = params.user_name
+    tenant_name = params.tenant_name
 
     user   = keystone.users.detect{|u| u.name == user_name}
     tenant = keystone.tenants.detect{|t| t.name == tenant_name}
@@ -134,12 +140,11 @@ class ImageTestEnvironment < IndividualTestEnvironmentBase
   IMAGE_FILE_DIR = "#{File.expand_path(File.dirname(__FILE__))}/materials/images"
 
   # params is test_auth_info
-  # @param params[:user_name] [String] test user name
-  # @param params[:password] [String] test user password
-  # @param params[:tenant_name] [String] test tenant_name
-  def initialize(params)
-    super(params)
-    @glance = Fog::Image.new(auth_info)
+  #@param auth_info [AuthInfo] authentication infomation
+  def initialize(auth_info)
+    super
+    @glance = OpenStackDriverFactory.new.create(:Image,
+                                                 auth_info)
   end
 
   # ensure specified image exists. 
@@ -191,33 +196,11 @@ end
 
 module OpenStackObject
 
-  class OpenStackObjectBase
-    @@neutron = nil
-
-    def self.test_environment(env)
-      @@test_environment = env
-    end
-
-    def env
-      @@test_environment
-    end
-
-    def neutron
-      @@neutron if @@neutron
-      @@neutron = Fog::Network.new(env.auth_info)
-    end
-
-    def logger
-      env.logger
-    end
-
-    def tenant_id
-      env.auth_info.tenant_id
-    end
+  class OpenStackObjectBase < TestEnvironmentBase
   end
 
   class Instance < OpenStackObjectBase
-    attr_accessor :name, :networks
+    attr_reader :name, :networks
 
     # @param name [String] instance name
     # @param 0..last [Network]  network object
@@ -229,13 +212,13 @@ module OpenStackObject
   end
   
   class Network < OpenStackObjectBase
-    attr_accessor :name, :cidr
+    attr_reader :name, :cidr
     def initialize(name, cidr)
       @name = name
       @cidr = cidr
     end
 
-    def deploy
+    def deploy(auth_info)
       neutron.networks.create(:name => name,
                               :tenant_id => tenant_id)
     end
@@ -265,11 +248,12 @@ end
 
 class TestEnvironment < TestEnvironmentBase
   attr_accessor :admin_auth_info, :test_auth_info
+  include OpenStackObject
+
   def initialize(params = {})
+    super
     @admin_auth_info = params[:admin_auth_info]
     @test_auth_info = params[:test_auth_info]
-    super(test_auth_info) # init auth_info as test_auth_info
-    OpenStackObjectBase.test_environment(self)
   end
 
   def objects(&block)
@@ -314,16 +298,20 @@ end
 ############################################################################
 #  config area
 ############################################################################
+
+auth_url = "http://192.168.122.84:5000/v2.0"
+
 #define OpenStack admin authentication info
 admin_auth_info = {:user_name => "admin",
                    :password => "a", 
-                   :tenant_name => "admin"}
+                   :tenant_name => "admin",
+                   :auth_url => auth_url}
 #define test authentication info
 test_auth_info  = {:user_name => "test_user", 
                    :password => "a", 
-                   :tenant_name => "test"}
-#auth url
-IndividualTestEnvironmentBase.auth_url = "http://192.168.122.84:5000/v2.0"
+                   :tenant_name => "test",
+                   :auth_url => auth_url}
+
 #instance image
 test_image = "cirros-0.3.4-x86_64-disk.img"
 # cirros-0.3.4-x86_64-disk.img is available following url
@@ -331,15 +319,19 @@ test_image = "cirros-0.3.4-x86_64-disk.img"
 ############################################################################
 #  code area
 ############################################################################
-## for OpenStack admin privilege
-#id_env = IdentityTestEnvironment.new(admin_auth_info)
-#id_env.create(test_auth_info)
+
+#convert hash to AuthInfo object
+admin_auth_info = AuthInfo.new(admin_auth_info)
+test_auth_info = AuthInfo.new(test_auth_info)
+
+id_env = IdentityTestEnvironment.new(admin_auth_info)
+id_env.create(test_auth_info)
 #
-#image_env = ImageTestEnvironment.new(test_auth_info)
-#image_env.create({:image_name => test_image})
+image_env = ImageTestEnvironment.new(test_auth_info)
+image_env.create({:image_name => test_image})
 #
-#image_env.delete({:image_name => test_image})
-#id_env.delete(test_auth_info)
+image_env.delete({:image_name => test_image})
+id_env.delete(test_auth_info)
 
 env = TestEnvironment.new(:admin_auth_info => admin_auth_info, 
                           :test_auth_info => test_auth_info)

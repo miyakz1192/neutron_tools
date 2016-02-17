@@ -130,15 +130,7 @@ module OpenStackObject
     end
 
     def ports
-      begin
-        puts "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-        puts Port.list.inspect
-        puts "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-        Port.list.select{|port| port.device_id == @concrete.id}
-#        driver.routers.router_port_list(@concrete.id)
-      rescue
-        puts "ROUTER PORT LIST FAILED"
-      end
+      Port.list.select{|port| port.device_id == @concrete.id}
     end
 
     def self.list

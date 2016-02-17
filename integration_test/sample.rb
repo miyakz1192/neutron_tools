@@ -195,6 +195,33 @@ end
 module OpenStackObject
 
   class OpenStackObjectBase < TestEnvironmentBase
+    attr_reader :concrete
+
+    @@auth_info = nil
+    @@driver_kind = nil
+    @@driver = nil
+
+    def self.auth_info=(auth_info)
+      @@auth_info = auth_info
+    end
+
+    def self.driver
+      return @@driver if @@driver
+      @@driver = OpenStackDriverFactory.new.create(@@driver_kind,
+                                                   @@auth_info)
+    end
+
+    def driver
+      self.class.driver
+    end
+
+    def method_missing(name, *args)
+      @concrete.send name, *args
+    end
+  end
+
+  class NeutronObjectBase < OpenStackObjectBase
+    @@driver_kind = :Network
   end
 
   class Instance < OpenStackObjectBase
@@ -209,16 +236,38 @@ module OpenStackObject
     end
   end
   
-  class Network < OpenStackObjectBase
-    attr_reader :name, :cidr
-    def initialize(name, cidr)
+  class Network < NeutronObjectBase
+    attr_reader :name, :cidr, :gateway_ip
+    def initialize(name, cidr, gateway_ip = nil)
       @name = name
       @cidr = cidr
     end
 
-    def deploy(auth_info)
-      neutron.networks.create(:name => name,
-                              :tenant_id => tenant_id)
+    def deploy
+      @concrete = driver.networks.create(:name => name)
+
+      subnet_param = {:name => "#{name}_subnet",
+                      :network_id => @concrete.id,
+                      :ip_version => 4,
+                      :cidr       => cidr}
+
+      if gateway_ip
+        subnet_param.merge!(:gateway_ip => gateway_ip)
+      end
+
+      driver.subnets.create(subnet_param)
+    end
+
+    def undeploy
+      @concrete.destroy if @concrete
+    end
+
+    def subnet
+      driver.subnets.detect{|s| s.network_id == @concrete.id}
+    end
+
+    def self.list
+      self.driver.networks
     end
   end
   
@@ -245,13 +294,15 @@ end
 
 
 class TestEnvironment < TestEnvironmentBase
-  attr_accessor :admin_auth_info, :test_auth_info
+  attr_accessor :admin_auth_info, :test_auth_info, :objects
   include OpenStackObject
 
   def initialize(params = {})
     super
-    @admin_auth_info = params[:admin_auth_info]
-    @test_auth_info = params[:test_auth_info]
+    @admin_auth_info = AuthInfo.new(params[:admin_auth_info])
+    @test_auth_info = AuthInfo.new(params[:test_auth_info])
+    @test_image = params[:test_image]
+    @objects = []
   end
 
   def objects(&block)
@@ -268,9 +319,27 @@ class TestEnvironment < TestEnvironmentBase
 #    eval(cmd)
 #  end
 
-  def build(&block)
+  def configure(&block)
+    @id_env = IdentityTestEnvironment.new(@admin_auth_info)
+    @id_env.create(@test_auth_info)
+    @image_env = ImageTestEnvironment.new(@test_auth_info)
+    @image_env.create({:image_name => @test_image})
     logger.info("BUILD OBJECTS")
     self.instance_eval(&block)
+  end
+
+  def deploy
+    @objects.each do |o|
+      o.deploy
+    end
+  end
+
+  def undeploy
+    @objects.reverse.each do |o|
+      o.undeploy
+    end
+    @image_env.delete({:image_name => @test_image})
+    @id_env.delete(@test_auth_info)
   end
 
   def connections(&block)
@@ -280,7 +349,10 @@ class TestEnvironment < TestEnvironmentBase
 protected
   def network(name, cidr)
     puts "creating network #{name},#{cidr}"
-    return name
+    Network.auth_info = @test_auth_info
+    net = Network.new(name, cidr)
+    @objects << net
+    return net
   end
 
   def router(name, *args)
@@ -318,60 +390,43 @@ test_image = "cirros-0.3.4-x86_64-disk.img"
 #  code area
 ############################################################################
 
-#convert hash to AuthInfo object
-admin_auth_info = AuthInfo.new(admin_auth_info)
-test_auth_info = AuthInfo.new(test_auth_info)
-
-id_env = IdentityTestEnvironment.new(admin_auth_info)
-id_env.create(test_auth_info)
-#
-image_env = ImageTestEnvironment.new(test_auth_info)
-image_env.create({:image_name => test_image})
-#
-image_env.delete({:image_name => test_image})
-id_env.delete(test_auth_info)
-
 env = TestEnvironment.new(:admin_auth_info => admin_auth_info, 
-                          :test_auth_info => test_auth_info)
+                          :test_auth_info => test_auth_info,
+                          :test_image => test_image)
+include OpenStackObject
 ############################################################################
 #  DSL area 
 ############################################################################
+#
 
-env.build do
+net1 = nil
+env.configure do
   net1 = network "net1", "192.168.1.0/24"
   net2 = network "net2", "192.168.2.0/24"
   network "net3", "192.168.3.0/24"
   router "router1", "net1", "net2", {:routes => ""}
   instance "instance2", net1, net2
 
-#TODO:
-#  router1.add_interface net1
-#  router1.add_interface net2
-
-#  OpenStackObject.instanciate
-  #
-
-# TODO:
-#  instance("instance1") do
-#    network net1,net2
-#    image "cirros.img"
-#  end
-
-#TODO:
-#  application("app1") do 
-#    copy "src_file", "dst_file"
-#    shell "sudo chkconfig add /etc/init.d/S99z_udp"
-#    method "default" do #default is network_namespace_injection
-#      instance_user_name "aaa"
-#      instance_password "bbb"
-#      network_node_user_name "zzz"
-#      network_node_password "qqq"
-#    end
-#  end
-#
-#  app1.apply(instance1)
+  puts "&&&&&&&&&&&&&&&&&"
+  puts Network.list.inspect
 end
 
+env.deploy
+puts "&&&&&&&&&&&&&&&&&"
+puts Network.list.inspect
+
+puts "##############"
+puts net1.name
+puts net1.subnet.name
+puts "##############"
+
+
+#eval(File.new("./integration_test.rb").read)
+env.undeploy
+puts "&&&&&&&&&&&&&&&&&"
+puts Network.list.inspect
+
+puts "================END==================="
 
 ##for test privilege
 #nova = Fog::Compute.new({

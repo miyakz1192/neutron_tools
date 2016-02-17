@@ -41,20 +41,24 @@ include OpenStackObject
 #
 
 net1 = nil
+router1 = nil
 env.configure do
   net1 = network "net1", "192.168.1.0/24"
   net2 = network "net2", "192.168.2.0/24"
   network "net3", "192.168.3.0/24"
-  router "router1", "net1", "net2", {:routes => ""}
+  router1 = router "router1", net1, net2, {:routes => ""}
   instance "instance2", net1, net2
 
   puts "&&&&&&&&&&&&&&&&&"
   puts Network.list.inspect
+  puts Router.list.inspect
 end
 
 env.deploy
 puts "&&&&&&&&&&&&&&&&&"
 puts Network.list.inspect
+puts Router.list.inspect
+puts router1.ports.inspect
 
 puts "##############"
 puts net1.name
@@ -66,6 +70,7 @@ puts "##############"
 env.undeploy
 puts "&&&&&&&&&&&&&&&&&"
 puts Network.list.inspect
+puts Router.list.inspect
 
 puts "================END==================="
 

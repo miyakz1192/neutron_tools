@@ -24,6 +24,19 @@ module OpenStackObject
     def method_missing(name, *args)
       @concrete.send name, *args
     end
+
+    def deploy
+      raise "not implement error(deploy)"
+    end
+    
+    def undeploy
+      raise "not implement error(undeploy)"
+    end
+
+    def undeploy
+      @concrete.destroy if @concrete
+      self
+    end
   end
 
   class NeutronObjectBase < OpenStackObjectBase
@@ -41,12 +54,19 @@ module OpenStackObject
       @networks = args
     end
   end
+
+  class Port < NeutronObjectBase
+    def self.list
+      self.driver.ports
+    end
+  end
   
   class Network < NeutronObjectBase
     attr_reader :name, :cidr, :gateway_ip
     def initialize(name, cidr, gateway_ip = nil)
       @name = name
       @cidr = cidr
+      @subnet = nil
     end
 
     def deploy
@@ -62,14 +82,12 @@ module OpenStackObject
       end
 
       driver.subnets.create(subnet_param)
-    end
-
-    def undeploy
-      @concrete.destroy if @concrete
+      self
     end
 
     def subnet
-      driver.subnets.detect{|s| s.network_id == @concrete.id}
+      @subnet if @subnet
+      @subnet = driver.subnets.detect{|s| s.network_id==@concrete.id}
     end
 
     def self.list
@@ -78,15 +96,53 @@ module OpenStackObject
   end
   
   class Router < OpenStackObjectBase
+    attr_reader :name, :args, :networks
+
     def initialize(name, *args)
+      @name = name
+      @args = args
+      @networks = @args.select{|a| a.class == Network}
+    end
+
+    def deploy
+      @concrete = driver.routers.create(:name => name)
+      puts "NETWORKS #{networks.count}" rescue puts "ERROR"
+      networks.each do |net|
+        add_interface(net)
+      end
+    end
+
+    def undeploy
+      networks.each do |net|
+        delete_interface(net)
+      end
+      super
     end
 
     def add_interface(net)
-      raise "not implement error"
+      driver.add_router_interface(@concrete.id,
+                                  net.subnet.id)
     end
 
     def delete_interface(net)
-      raise "not implement error"
+      driver.remove_router_interface(@concrete.id,
+                                     net.subnet.id)
+    end
+
+    def ports
+      begin
+        puts "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+        puts Port.list.inspect
+        puts "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+        Port.list.select{|port| port.device_id == @concrete.id}
+#        driver.routers.router_port_list(@concrete.id)
+      rescue
+        puts "ROUTER PORT LIST FAILED"
+      end
+    end
+
+    def self.list
+      self.driver.routers 
     end
   end
 

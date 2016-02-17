@@ -173,12 +173,18 @@ class TestEnvironment < TestEnvironmentBase
 #  end
 
   def configure(&block)
-    @id_env = IdentityTestEnvironment.new(@admin_auth_info)
-    @id_env.create(@test_auth_info)
-    @image_env = ImageTestEnvironment.new(@test_auth_info)
-    @image_env.create({:image_name => @test_image})
-    logger.info("BUILD OBJECTS")
-    self.instance_eval(&block)
+    begin
+      @id_env = IdentityTestEnvironment.new(@admin_auth_info)
+      @id_env.create(@test_auth_info)
+      @image_env = ImageTestEnvironment.new(@test_auth_info)
+      @image_env.create({:image_name => @test_image})
+      logger.info("BUILD OBJECTS")
+      self.instance_eval(&block)
+    rescue => e
+      logger e.message
+      undeploy 
+      raise e
+    end
   end
 
   def deploy
@@ -201,20 +207,22 @@ class TestEnvironment < TestEnvironmentBase
 
 protected
   def network(name, cidr)
-    puts "creating network #{name},#{cidr}"
+    logger.info "creating network #{name},#{cidr}"
     Network.auth_info = @test_auth_info
     net = Network.new(name, cidr)
     @objects << net
-    return net
+    net
   end
 
   def router(name, *args)
-    puts "creating router #{name},#{args.inspect}"
-    return name
+    logger.info "creating router #{name},#{args.inspect}"
+    Router.auth_info = @test_auth_info
+    router = Router.new(name, *args)
+    @objects << router
+    router
   end
 
   def instance(name, *args)
-    puts "creating instance #{name},#{args.inspect}"
-    return name
+    logger.info "creating instance #{name},#{args.inspect}"
   end
 end

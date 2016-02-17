@@ -147,14 +147,15 @@ end
 
 
 class TestEnvironment < TestEnvironmentBase
-  attr_accessor :admin_auth_info, :test_auth_info, :objects
+  attr_accessor :admin_auth_info, :test_auth_info, :default, :objects
   include OpenStackObject
 
+  #TODO: argument validatoin
   def initialize(params = {})
     super
     @admin_auth_info = AuthInfo.new(params[:admin_auth_info])
-    @test_auth_info = AuthInfo.new(params[:test_auth_info])
-    @test_image = params[:test_image]
+    @test_auth_info  = AuthInfo.new(params[:test_auth_info])
+    @default = params[:default]
     @objects = []
   end
 
@@ -181,7 +182,7 @@ class TestEnvironment < TestEnvironmentBase
       logger.info("BUILD OBJECTS")
       self.instance_eval(&block)
     rescue => e
-      logger e.message
+      logger.error e.message
       undeploy 
       raise e
     end
@@ -222,6 +223,16 @@ protected
     router
   end
 
+  # create instance
+  # caller can specify Network option simpley like as
+  #   instance "instance2", net1, net2
+  # additional option can also specified as Hash object
+  #   instance "instance2", net1, net2, {:flavor => "m1.tiny", :image => "imagename"}
+  # @param name [String] instance name
+  # @param arg(Network) [Network] Network object reference(*N)
+  # @param arg(Hash) [Hash] other option
+  # @param [:flavor] [String] flavor name(default is "default_flavor")
+  # @param [:image] [String] image name(default is "default_image")
   def instance(name, *args)
     logger.info "creating instance #{name},#{args.inspect}"
   end

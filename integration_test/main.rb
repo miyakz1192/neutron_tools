@@ -24,16 +24,16 @@ test_auth_info  = {:user_name => "test_user",
                    :auth_url => auth_url}
 
 #instance image
-test_image = "cirros-0.3.4-x86_64-disk.img"
+default_image = "cirros-0.3.4-x86_64-disk.img"
 # cirros-0.3.4-x86_64-disk.img is available following url
 # wget http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img
-############################################################################
-#  code area
+default_flavor = "m1.tiny"
 ############################################################################
 
 env = TestEnvironment.new(:admin_auth_info => admin_auth_info, 
                           :test_auth_info => test_auth_info,
-                          :test_image => test_image)
+                          :default => {:image => default_image,
+                                       :flavor => default_flavor})
 include OpenStackObject
 ############################################################################
 #  DSL area 

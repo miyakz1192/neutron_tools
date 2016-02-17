@@ -103,12 +103,10 @@ class IdentityTestEnvironment < IndividualTestEnvironmentBase
   end
 
   # delete given user_name/tenant_name
-  # @param params[:user_name] [String] test user name
-  # @param params[:password] [String] test user password
-  # @param params[:tenant_name] [String] test tenant_name
-  def delete_impl(params)
-    user_name   = params.user_name
-    tenant_name = params.tenant_name
+  #@param auth_info [AuthInfo] authentication infomation
+  def delete_impl(auth_info)
+    user_name   = auth_info.user_name
+    tenant_name = auth_info.tenant_name
 
     user   = keystone.users.detect{|u| u.name == user_name}
     tenant = keystone.tenants.detect{|t| t.name == tenant_name}

@@ -200,7 +200,7 @@ class TestEnvironment < TestEnvironmentBase
     @objects.reverse.each do |o|
       o.undeploy
     end
-    self.instance_eval(&block)
+    self.instance_eval(&block) if block
     @image_env.delete({:image_name => @test_image})
     @id_env.delete(@test_auth_info)
   end

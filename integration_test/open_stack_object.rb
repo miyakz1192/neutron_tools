@@ -38,10 +38,18 @@ module OpenStackObject
 
   class NovaObjectBase < OpenStackObjectBase
     def self.driver
-      OpenStackDriverFactory.new.create(:Network,
+      OpenStackDriverFactory.new.create(:Compute,
                                         @@auth_info)
     end
   end
+
+  class GlanceObjectBase < OpenStackObjectBase
+    def self.driver
+      OpenStackDriverFactory.new.create(:Image,
+                                        @@auth_info)
+    end
+  end
+
 
   class Port < NeutronObjectBase
     def self.list
@@ -55,6 +63,7 @@ module OpenStackObject
       @name = name
       @cidr = cidr
       @subnet = nil
+      super({})
     end
 
     def deploy
@@ -97,6 +106,7 @@ module OpenStackObject
       @name = name
       @args = args
       @networks = @args.select{|a| a.class == Network}
+      super({})
     end
 
     def deploy
@@ -156,14 +166,21 @@ module OpenStackObject
       @name = name
       @networks = self.class.find_network_from(args)
       @exparams  = self.class.find_exparams_from(args)
-      if @exparams
-        @image = @exparams[:image] || @@default[:image]
-        @flavor = @exparams[:flavor] || @@default[:flavor]
-      end
+      @image = @exparams[:image] || @@default[:image]
+      @flavor = @exparams[:flavor] || @@default[:flavor]
+      super({})
     end
 
     def self.default=(default_value)
       @@default = default_value
+    end
+
+    def deploy
+      logger.info("DEPLOYING INSTANCE #{name},#{image},#{flavor}")
+      server = driver.servers.create :name => name,
+                                     :image_ref => image,
+                                     :flavor_ref => flavor
+      server.wait_for { ready? }
     end
 
 
@@ -176,7 +193,7 @@ module OpenStackObject
     end
 
     def self.find_exparams_from(args)
-      args.detect{|a| a.is_a?(Hash)}
+      args.detect{|a| a.is_a?(Hash)} || {}
     end
 
   end

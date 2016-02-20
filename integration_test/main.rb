@@ -60,7 +60,7 @@ env.deploy do
     net2 = network "net2", "192.168.2.0/24"
     network "net3", "192.168.3.0/24"
     router1 = router "router1", net1, net2, {:routes => ""}
-  #  instance "instance2", net1, net2
+    instance "instance1", net1, net2
   end
 end
 
@@ -78,7 +78,6 @@ end
 
 env.undeploy do
   before_undeploy_finish do
-    sleep 10
     with(test_auth) do
       puts "BEFORE UNDEPLOY FINISH &&&&&&&&&&&&&&&&&"
       puts Network.list.inspect

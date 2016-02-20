@@ -209,9 +209,6 @@ class TestEnvironment < TestEnvironmentBase
     #switch auth_info
     OpenStackObjectBase.auth_info = auth_info
     self.instance_eval(&block)
-    @objects.each do |o|
-      o.deploy
-    end
   end
 
   def before_undeploy_finish(&block)
@@ -226,6 +223,7 @@ protected
   def network(name, cidr)
     logger.info "creating network #{name},#{cidr}"
     net = Network.new(name, cidr)
+    net.deploy
     @objects << net
     net
   end
@@ -233,6 +231,7 @@ protected
   def router(name, *args)
     logger.info "creating router #{name},#{args.inspect}"
     router = Router.new(name, *args)
+    router.deploy
     @objects << router
     router
   end
@@ -251,6 +250,7 @@ protected
     logger.info "creating instance #{name},#{args.inspect}"
     Instance.default = @default
     instance = Instance.new(name, *args)
+    instance.deploy
     @objects << instance
     logger.info instance.inspect
     logger.info("ININININININI")

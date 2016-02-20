@@ -21,13 +21,9 @@ module OpenStackObject
     end
     
     def undeploy
-      raise "not implement error(undeploy)"
-    end
-
-    def undeploy
       if @concrete
-        puts "++UNDEPLOY #{@concrete.class.name},#{@concrete.name}"
-        puts @concrete.destroy.inspect
+        puts "++UNDEPLOY #{@concrete.class.name},#{@concrete.name},#{@concrete.id}"
+        puts @concrete.destroy
       end
       self
     end
@@ -83,15 +79,13 @@ module OpenStackObject
     end
 
     def self.list
-      puts "IIIIIIIIIIIIIIIIIIIIIIIIIIIII"
-      puts "#{self.driver.class.name}"
       self.driver.networks
     end
 
     def self.delete_all
       list.each do |net|
-        puts "DELETE #{net.name},#{net.id}"
-        net.destroy
+        puts "DELETE #{net.name},#{net.id},#{net.tenant_id}"
+        net.destroy rescue puts "ERROR: net delete"
       end
     end
   end
@@ -106,7 +100,6 @@ module OpenStackObject
     end
 
     def deploy
-      return unless @concrete
       @concrete = driver.routers.create(:name => name)
       puts "NETWORKS #{networks.count}" rescue puts "ERROR"
       networks.each do |net|
@@ -115,6 +108,7 @@ module OpenStackObject
     end
 
     def undeploy
+      return unless @concrete
       networks.each do |net|
         delete_interface(net)
       end

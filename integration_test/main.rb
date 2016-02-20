@@ -49,6 +49,7 @@ include OpenStackObject
 #    Network.delete_all
 #  end
 #end
+#exit 0
 
 
 net1 = nil
@@ -78,9 +79,11 @@ end
 env.undeploy do
   before_undeploy_finish do
     sleep 10
-    puts "BEFORE UNDEPLOY FINISH &&&&&&&&&&&&&&&&&"
-    puts Network.list.inspect
-    puts Router.list.inspect
+    with(test_auth) do
+      puts "BEFORE UNDEPLOY FINISH &&&&&&&&&&&&&&&&&"
+      puts Network.list.inspect
+      puts Router.list.inspect
+    end
   end
 end
 

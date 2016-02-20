@@ -13,15 +13,15 @@ require './auth_info'
 auth_url = "http://192.168.122.84:5000/v2.0"
 
 #define OpenStack admin authentication info
-admin_auth_info = {:user_name => "admin",
-                   :password => "a", 
-                   :tenant_name => "admin",
-                   :auth_url => auth_url}
+admin_auth = {:user_name => "admin",
+              :password => "a", 
+              :tenant_name => "admin",
+              :auth_url => auth_url}
 #define test authentication info
-test_auth_info  = {:user_name => "test_user", 
-                   :password => "a", 
-                   :tenant_name => "test",
-                   :auth_url => auth_url}
+test_auth  = {:user_name => "test_user", 
+              :password => "a", 
+              :tenant_name => "test",
+              :auth_url => auth_url}
 
 #instance image
 default_image = "cirros-0.3.4-x86_64-disk.img"
@@ -30,8 +30,11 @@ default_image = "cirros-0.3.4-x86_64-disk.img"
 default_flavor = "m1.tiny"
 ############################################################################
 
-env = TestEnvironment.new(:admin_auth_info => admin_auth_info, 
-                          :test_auth_info => test_auth_info,
+admin_auth = AuthInfo.new(admin_auth)
+test_auth  = AuthInfo.new(test_auth)
+
+env = TestEnvironment.new(:admin_auth_info => admin_auth, 
+                          :test_auth_info => test_auth,
                           :default => {:image => default_image,
                                        :flavor => default_flavor})
 include OpenStackObject
@@ -39,38 +42,49 @@ include OpenStackObject
 #  DSL area 
 ############################################################################
 #
+#
+
+#env.exec do
+#  with(admin_auth) do
+#    Network.delete_all
+#  end
+#end
+
 
 net1 = nil
 router1 = nil
-env.configure do
-  net1 = network "net1", "192.168.1.0/24"
-  net2 = network "net2", "192.168.2.0/24"
-  network "net3", "192.168.3.0/24"
-  router1 = router "router1", net1, net2, {:routes => ""}
-  instance "instance2", net1, net2
-
-  puts "&&&&&&&&&&&&&&&&&"
-  puts Network.list.inspect
-  puts Router.list.inspect
+env.deploy do
+  with(test_auth) do
+    net1 = network "net1", "192.168.1.0/24"
+    net2 = network "net2", "192.168.2.0/24"
+    network "net3", "192.168.3.0/24"
+    router1 = router "router1", net1, net2, {:routes => ""}
+  #  instance "instance2", net1, net2
+  end
 end
 
-env.deploy
-puts "&&&&&&&&&&&&&&&&&"
-puts Network.list.inspect
-puts Router.list.inspect
-puts router1.ports.inspect
+env.exec do
+  with(test_auth) do
+    puts "##############"
+    puts net1.name
+    puts net1.subnet.name
+    puts "##############"
+    puts "EXEC &&&&&&&&&&&&&&&&&"
+    puts Network.list.inspect
+    puts Router.list.inspect
+  end
+end
 
-puts "##############"
-puts net1.name
-puts net1.subnet.name
-puts "##############"
+env.undeploy do
+  before_undeploy_finish do
+    sleep 10
+    puts "BEFORE UNDEPLOY FINISH &&&&&&&&&&&&&&&&&"
+    puts Network.list.inspect
+    puts Router.list.inspect
+  end
+end
 
 
-#eval(File.new("./integration_test.rb").read)
-env.undeploy
-puts "&&&&&&&&&&&&&&&&&"
-puts Network.list.inspect
-puts Router.list.inspect
 
 puts "================END==================="
 

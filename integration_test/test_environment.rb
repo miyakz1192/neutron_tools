@@ -153,8 +153,8 @@ class TestEnvironment < TestEnvironmentBase
   #TODO: argument validatoin
   def initialize(params = {})
     super
-    @admin_auth_info = AuthInfo.new(params[:admin_auth_info])
-    @test_auth_info  = AuthInfo.new(params[:test_auth_info])
+    @admin_auth_info = params[:admin_auth_info]
+    @test_auth_info  = params[:test_auth_info]
     @default = params[:default]
     @objects = []
   end
@@ -173,33 +173,49 @@ class TestEnvironment < TestEnvironmentBase
 #    eval(cmd)
 #  end
 
-  def configure(&block)
+  def deploy(&block)
     begin
       @id_env = IdentityTestEnvironment.new(@admin_auth_info)
       @id_env.create(@test_auth_info)
       @image_env = ImageTestEnvironment.new(@test_auth_info)
-      @image_env.create({:image_name => @test_image})
+      @image_env.create({:image_name => @default[:image]})
       logger.info("BUILD OBJECTS")
       self.instance_eval(&block)
     rescue => e
-      logger.error e.message
+      logger.error("error occured #{e.message} ROLLBACK START")
+      logger.error("TRACE:")
+      logger.error(e.backtrace.join('\n').inspect)
+      logger.error(e.backtrace.inspect)
       undeploy 
+      logger.error("ROLLBACK END")
       raise e
     end
   end
 
-  def deploy
+  def exec(&block)
+    self.instance_eval(&block)
+  end
+
+  def undeploy(&block)
+    @objects.reverse.each do |o|
+      o.undeploy
+    end
+    self.instance_eval(&block)
+    @image_env.delete({:image_name => @test_image})
+    @id_env.delete(@test_auth_info)
+  end
+
+  def with(auth_info, &block)
+    #switch auth_info
+    OpenStackObjectBase.auth_info = auth_info
+    self.instance_eval(&block)
     @objects.each do |o|
       o.deploy
     end
   end
 
-  def undeploy
-    @objects.reverse.each do |o|
-      o.undeploy
-    end
-    @image_env.delete({:image_name => @test_image})
-    @id_env.delete(@test_auth_info)
+  def before_undeploy_finish(&block)
+    block.call
   end
 
   def connections(&block)
@@ -209,7 +225,6 @@ class TestEnvironment < TestEnvironmentBase
 protected
   def network(name, cidr)
     logger.info "creating network #{name},#{cidr}"
-    Network.auth_info = @test_auth_info
     net = Network.new(name, cidr)
     @objects << net
     net
@@ -217,7 +232,6 @@ protected
 
   def router(name, *args)
     logger.info "creating router #{name},#{args.inspect}"
-    Router.auth_info = @test_auth_info
     router = Router.new(name, *args)
     @objects << router
     router
@@ -235,5 +249,11 @@ protected
   # @param [:image] [String] image name(default is "default_image")
   def instance(name, *args)
     logger.info "creating instance #{name},#{args.inspect}"
+    Instance.default = @default
+    instance = Instance.new(name, *args)
+    @objects << instance
+    logger.info instance.inspect
+    logger.info("ININININININI")
+    instance
   end
 end

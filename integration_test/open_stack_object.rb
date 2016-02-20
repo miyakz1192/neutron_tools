@@ -2,19 +2,10 @@ module OpenStackObject
 
   class OpenStackObjectBase < ObjectBase
     attr_reader :concrete
-
     @@auth_info = nil
-    @@driver_kind = nil
-    @@driver = nil
 
-    def self.auth_info=(auth_info)
-      @@auth_info = auth_info
-    end
-
-    def self.driver
-      return @@driver if @@driver
-      @@driver = OpenStackDriverFactory.new.create(@@driver_kind,
-                                                   @@auth_info)
+    def self.auth_info=(ai)
+      @@auth_info = ai
     end
 
     def driver
@@ -34,24 +25,25 @@ module OpenStackObject
     end
 
     def undeploy
-      @concrete.destroy if @concrete
+      if @concrete
+        puts "++UNDEPLOY #{@concrete.class.name},#{@concrete.name}"
+        puts @concrete.destroy.inspect
+      end
       self
     end
   end
 
   class NeutronObjectBase < OpenStackObjectBase
-    @@driver_kind = :Network
+    def self.driver
+      OpenStackDriverFactory.new.create(:Network,
+                                        @@auth_info)
+    end
   end
 
-  class Instance < OpenStackObjectBase
-    attr_reader :name, :networks
-
-    # @param name [String] instance name
-    # @param 0..last [Network]  network object
-    def initialize(name, *args)
-      raise "not Network object" if args.detect{|a| a.class != Network}
-      @name = name
-      @networks = args
+  class NovaObjectBase < OpenStackObjectBase
+    def self.driver
+      OpenStackDriverFactory.new.create(:Network,
+                                        @@auth_info)
     end
   end
 
@@ -91,11 +83,20 @@ module OpenStackObject
     end
 
     def self.list
+      puts "IIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+      puts "#{self.driver.class.name}"
       self.driver.networks
+    end
+
+    def self.delete_all
+      list.each do |net|
+        puts "DELETE #{net.name},#{net.id}"
+        net.destroy
+      end
     end
   end
   
-  class Router < OpenStackObjectBase
+  class Router < NeutronObjectBase
     attr_reader :name, :args, :networks
 
     def initialize(name, *args)
@@ -105,6 +106,7 @@ module OpenStackObject
     end
 
     def deploy
+      return unless @concrete
       @concrete = driver.routers.create(:name => name)
       puts "NETWORKS #{networks.count}" rescue puts "ERROR"
       networks.each do |net|
@@ -120,16 +122,19 @@ module OpenStackObject
     end
 
     def add_interface(net)
+      return unless @concrete
       driver.add_router_interface(@concrete.id,
                                   net.subnet.id)
     end
 
     def delete_interface(net)
+      return unless @concrete
       driver.remove_router_interface(@concrete.id,
                                      net.subnet.id)
     end
 
     def ports
+      return unless @concrete
       Port.list.select{|port| port.device_id == @concrete.id}
     end
 
@@ -138,11 +143,50 @@ module OpenStackObject
     end
   end
 
-  class Routers
+  class Routers < NeutronObjectBase
     def self.delete_all
       raise "not implement error"
     end
   end
+
+  class Instance < NovaObjectBase
+    attr_reader :name, :networks, :image, :flavor, :exparams
+    #default value(image, flavor)
+    @@default
+
+    #instance object initializer
+    # @param name [String] instance name
+    # @param arg(Network) [Network] Network object reference(*N)
+    # @param arg(Hash) [Hash] other option
+    def initialize(name, *args)
+      @name = name
+      @networks = self.class.find_network_from(args)
+      @exparams  = self.class.find_exparams_from(args)
+      if @exparams
+        @image = @exparams[:image] || @@default[:image]
+        @flavor = @exparams[:flavor] || @@default[:flavor]
+      end
+    end
+
+    def self.default=(default_value)
+      @@default = default_value
+    end
+
+
+    def self.find_network_from(args)
+      networks = args.select{|a| a.is_a?(Network)}
+      if networks.empty?
+        raise "Network object not found" 
+      end
+      networks
+    end
+
+    def self.find_exparams_from(args)
+      args.detect{|a| a.is_a?(Hash)}
+    end
+
+  end
+
 end
 
 

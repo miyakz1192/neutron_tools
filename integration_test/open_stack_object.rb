@@ -22,8 +22,8 @@ module OpenStackObject
     
     def undeploy
       if @concrete
-        puts "++UNDEPLOY #{@concrete.class.name},#{@concrete.name},#{@concrete.id}"
-        puts @concrete.destroy
+        logger.info "++UNDEPLOY #{@concrete.class.name},#{@concrete.name},#{@concrete.id}"
+        @concrete.destroy
       end
       self
     end
@@ -54,6 +54,12 @@ module OpenStackObject
   class Port < NeutronObjectBase
     def self.list
       self.driver.ports
+    end
+
+    def self.delete_all
+      self.list.each do |port|
+        port.destroy
+      end
     end
   end
   
@@ -127,14 +133,26 @@ module OpenStackObject
 
     def add_interface(net)
       return unless @concrete
-      driver.add_router_interface(@concrete.id,
-                                  net.subnet.id)
+      if net.is_a?(Network)
+        driver.add_router_interface(@concrete.id,
+                                    net.subnet.id)
+      else
+        #try net as network id
+        driver.add_router_interface(@concrete.id,
+                                    net)
+      end
     end
 
     def delete_interface(net)
       return unless @concrete
-      driver.remove_router_interface(@concrete.id,
-                                     net.subnet.id)
+      if net.is_a?(Network)
+        driver.remove_router_interface(@concrete.id,
+                                       net.subnet.id)
+      else
+        #try net as network id
+        driver.remove_router_interface(@concrete.id,
+                                       net)
+      end
     end
 
     def ports
@@ -145,11 +163,23 @@ module OpenStackObject
     def self.list
       self.driver.routers 
     end
+
+    def self.delete_all
+      self.list.each do |router|
+        ports = Port.list.select{|port| port.device_id == router.id}
+        ports.each do |port|
+          subnet = driver.subnets.detect{|s| s.network_id == port.network_id}
+          self.driver.remove_router_interface(router.id,
+                                              subnet.id)
+        end
+        router.destroy
+      end
+    end
   end
 
-  class Routers < NeutronObjectBase
-    def self.delete_all
-      raise "not implement error"
+  class Image < GlanceObjectBase
+    def self.list
+      self.driver.images
     end
   end
 
@@ -166,8 +196,12 @@ module OpenStackObject
       @name = name
       @networks = self.class.find_network_from(args)
       @exparams  = self.class.find_exparams_from(args)
-      @image = @exparams[:image] || @@default[:image]
-      @flavor = @exparams[:flavor] || @@default[:flavor]
+      image_name = @exparams[:image] || @@default[:image]
+      flavor_name = @exparams[:flavor] || @@default[:flavor]
+      @image = Image.list.detect{|i| i.name == image_name}
+      @flavor = driver.flavors.detect{|f| f.name == flavor_name}
+      raise "image #{image_name} not found" unless @image
+      raise "flavor #{flavor_name} not found" unless @flavor
       super({})
     end
 
@@ -176,13 +210,26 @@ module OpenStackObject
     end
 
     def deploy
-      logger.info("DEPLOYING INSTANCE #{name},#{image},#{flavor}")
+      logger.info("DEPLOYING INSTANCE #{name},#{image.name},#{flavor.id}")
+      nics = @networks.map{|n| {:net_id => n.id}}
       server = driver.servers.create :name => name,
-                                     :image_ref => image,
-                                     :flavor_ref => flavor
+                                     :image_ref => image.id,
+                                     :flavor_ref => flavor.id,
+                                     :nics => nics
       server.wait_for { ready? }
+      @concrete = server
     end
 
+    def undeploy
+      return unless @concrete
+      uuid = @concrete.id
+      super
+      while driver.servers.get(uuid)
+        logger.info "waiting for deleted instance(#{uuid}). sleep 10s"
+        sleep 10
+      end
+      logger.info "instance(#{uuid}) deleted"
+    end
 
     def self.find_network_from(args)
       networks = args.select{|a| a.is_a?(Network)}

@@ -49,9 +49,10 @@ class IdentityTestEnvironment < IndividualTestEnvironmentBase
     unless keystone.users.detect{|u| u.name == user_name}
       logger.info("#{user_name} does not exist. so make it")
       tenant_id = keystone.tenants.detect{|t| t.name == tenant_name}.id
-      keystone.users.create({:name => user_name,
-                             :tenant_id => tenant_id,
-                             :password => password})
+      u = keystone.users.create({:name => user_name,
+                                 :tenant_id => tenant_id,
+                                 :password => password})
+      logger.info "user = #{u.inspect}"
     end
     logging_res
   end
@@ -89,6 +90,7 @@ protected
 end
 
 class ImageTestEnvironment < IndividualTestEnvironmentBase
+  attr_reader :image
   IMAGE_FILE_DIR = "#{File.expand_path(File.dirname(__FILE__))}/materials/images"
 
   # params is test_auth_info
@@ -108,25 +110,27 @@ class ImageTestEnvironment < IndividualTestEnvironmentBase
     image_size = File.size(image_location)
 
     logger.info("check image \"#{image_name}\" exists")
+    logger.info("image_location = #{image_location}")
     unless glance.images.detect{|i| i.name == image_name}
       logger.info("crate image \"#{image_name}\"")
-      glance.images.create({:name => image_name,
-                            #:size => image_size,
-                            :disk_format => "qcow2",
-                            :container_format => "bare",
-                            :location => image_location})
-      logger.info("crate image \"#{image_name}\" done. check exists")
+      @image = glance.images.create({:name => image_name,
+                                     :size => image_size,
+                                     :disk_format => "qcow2",
+                                     :container_format => "bare",
+                                     :location => image_location})
+      logger.info("crate image \"#{image_name}\",#{image.id} done. check exists")
     end
 
     logging_res(image_name)
   end
 
   def delete_impl(params = {})
-    image_name = params[:image_name]
+    puts `glance image-list`
 
-    image = glance.images.detect{|i| i.name == image_name}
-    image.destroy if image
-    logging_res(image_name)
+    if image
+      image.destroy
+      logging_res(image.name)
+    end
   end
 
 protected
@@ -136,12 +140,13 @@ protected
 
   def logging_res(image_name)
     logger.info("===show images===")
-    image = glance.images.detect{|i| i.name == image_name}
-    if image
-      logger.info("check res == #{image.name}")
+    img = glance.images.detect{|i| i.name == image_name}
+    if img
+      logger.info("check res == #{img.name}")
     else
       logger.info("no such as image #{image_name}")
     end
+    puts `glance image-list`
   end
 end
 
@@ -190,6 +195,7 @@ class TestEnvironment < TestEnvironmentBase
       logger.error("ROLLBACK END")
       raise e
     end
+    puts `glance image-list`
   end
 
   def exec(&block)
@@ -201,7 +207,7 @@ class TestEnvironment < TestEnvironmentBase
       o.undeploy
     end
     self.instance_eval(&block) if block
-    @image_env.delete({:image_name => @test_image})
+    @image_env.delete
     @id_env.delete(@test_auth_info)
   end
 
@@ -219,6 +225,14 @@ class TestEnvironment < TestEnvironmentBase
     logger.info("DEFINE CONNECTIONS")
   end
 
+  def delete_all_network_resources
+    with(@test_auth_info) do
+      Router.delete_all
+      Port.delete_all
+      Network.delete_all
+    end
+  end
+
 protected
   def network(name, cidr)
     logger.info "creating network #{name},#{cidr}"
@@ -229,7 +243,7 @@ protected
   end
 
   def router(name, *args)
-    logger.info "creating router #{name},#{args.inspect}"
+    logger.info "creating router #{name}"
     router = Router.new(name, *args)
     router.deploy
     @objects << router
@@ -247,13 +261,12 @@ protected
   # @param [:flavor] [String] flavor name(default is "default_flavor")
   # @param [:image] [String] image name(default is "default_image")
   def instance(name, *args)
-    logger.info "creating instance #{name},#{args.inspect}"
+    logger.info "creating instance #{name}"
     Instance.default = @default
     instance = Instance.new(name, *args)
     instance.deploy
     @objects << instance
     logger.info instance.inspect
-    logger.info("ININININININI")
     instance
   end
 end

@@ -8,7 +8,12 @@ class OpenStackDriverFactory
   #@param auth_info [AuthInfo] authentication infomation
   def create(kind,auth_info)
     auth = convert_auth_info(auth_info)
-    eval("Fog::#{kind}.new(auth)")
+    if kind == :Image
+      auth.delete(:provider)
+      Fog::Image::OpenStack::V1.new(auth)
+    else
+      eval("Fog::#{kind}.new(auth)")
+    end
   end
 
 protected

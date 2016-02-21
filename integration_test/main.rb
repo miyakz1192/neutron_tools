@@ -44,13 +44,8 @@ include OpenStackObject
 #
 #
 
-#env.exec do
-#  with(admin_auth) do
-#    Network.delete_all
-#  end
-#end
+#env.delete_all_network_resources
 #exit 0
-
 
 net1 = nil
 router1 = nil
@@ -71,8 +66,8 @@ env.exec do
     puts net1.subnet.name
     puts "##############"
     puts "EXEC &&&&&&&&&&&&&&&&&"
-    puts Network.list.inspect
-    puts Router.list.inspect
+    puts Network.list.map{|o| "#{o.name},#{o.id}"}
+    puts Router.list.map{|o| "#{o.name},#{o.id}"}
   end
 end
 
@@ -80,8 +75,8 @@ env.undeploy do
   before_undeploy_finish do
     with(test_auth) do
       puts "BEFORE UNDEPLOY FINISH &&&&&&&&&&&&&&&&&"
-      puts Network.list.inspect
-      puts Router.list.inspect
+      puts Network.list.map{|o| "#{o.name},#{o.id}"}
+      puts Router.list.map{|o| "#{o.name},#{o.id}"}
     end
   end
 end
@@ -89,38 +84,3 @@ end
 
 
 puts "================END==================="
-
-##for test privilege
-#nova = Fog::Compute.new({
-#  :provider => 'OpenStack',
-#  :openstack_api_key => ENV['OS_PASSWORD'],
-#  :openstack_username => ENV["OS_USERNAME"],
-#  :openstack_auth_url => "#{ENV["OS_AUTH_URL"]}/tokens",
-#  :openstack_tenant => ENV["OS_TENANT_NAME"]
-#})
-#
-##for test privilege
-#neutron = Fog::Network.new({
-#  :provider => 'OpenStack',
-#  :openstack_api_key => ENV['OS_PASSWORD'],
-#  :openstack_username => ENV["OS_USERNAME"],
-#  :openstack_auth_url => "#{ENV["OS_AUTH_URL"]}/tokens",
-#  :openstack_tenant => ENV["OS_TENANT_NAME"]
-#})
-#
-#neutron.networks.each do |net|
-#  puts "#{net.id},#{net.name}"
-#end
-
-#flavor = conn.flavors.find { |f| f.name == 'm1.tiny' }
-#puts flavor.inspect
-
-#image_name = 'Cirros 0.3.0 x86_64'
-#image = conn.images.find { |i| i.name == image_name }
-#
-#puts "#{'Creating server'} from image #{image.name}..."
-#server = conn.servers.create :name => "fogvm-#{Time.now.strftime '%Y%m%d-%H%M%S'}",
-#                             :image_ref => image.id,
-#                             :flavor_ref => flavor.id,
-#                             :key_name => 'testkey01'
-#server.wait_for { ready? }
